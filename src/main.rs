@@ -149,6 +149,7 @@ impl InstallerApp {
 
     fn start_installation(&mut self) {
         self.state.screen = Screen::Installing;
+        self.state.is_uninstall = false;
 
         let to_install: Vec<_> = self
             .state
@@ -169,12 +170,44 @@ impl InstallerApp {
             let mut l = self.log.lock().unwrap();
             l.clear();
             for (name, _, _, _) in &to_install {
-                l.push((name.clone(), InstallStatus::Pending));
+                l.push(state::InstallLogEntry {
+                    app: name.clone(),
+                    status: InstallStatus::Pending,
+                    actions: Vec::new(),
+                });
             }
         }
 
         let log_clone = Arc::clone(&self.log);
         runner::install_programs(to_install, self.state.install_options.clone(), log_clone);
+    }
+
+    fn start_uninstallation(&mut self) {
+        self.state.screen = Screen::Installing;
+        self.state.is_uninstall = true;
+
+        let to_uninstall: Vec<String> = self
+            .state
+            .programs
+            .iter()
+            .filter(|p| p.selected && p.installed_version.is_some())
+            .map(|p| p.repo.name.clone())
+            .collect();
+
+        {
+            let mut l = self.log.lock().unwrap();
+            l.clear();
+            for name in &to_uninstall {
+                l.push(state::InstallLogEntry {
+                    app: name.clone(),
+                    status: InstallStatus::Pending,
+                    actions: Vec::new(),
+                });
+            }
+        }
+
+        let log_clone = Arc::clone(&self.log);
+        runner::uninstall_programs(to_uninstall, log_clone);
     }
 }
 
@@ -196,17 +229,23 @@ impl eframe::App for InstallerApp {
                 }
             }
             Screen::ProgramList => {
-                if screens::program_list::show(ui, &mut self.state) {
+                let (do_install, do_uninstall) = screens::program_list::show(ui, &mut self.state);
+                if do_install {
                     self.start_installation();
+                } else if do_uninstall {
+                    self.start_uninstallation();
                 }
             }
             Screen::Installing => {
                 let log = self.log.lock().unwrap().clone();
                 let all_done = !log.is_empty()
-                    && log.iter().all(|(_, s)| {
-                        matches!(s, InstallStatus::Done(_) | InstallStatus::Error(_))
+                    && log.iter().all(|entry| {
+                        matches!(
+                            entry.status,
+                            InstallStatus::Done(_) | InstallStatus::Error(_)
+                        )
                     });
-                if screens::installing::show(ui, &log, all_done) {
+                if screens::installing::show(ui, &log, all_done, self.state.is_uninstall) {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
