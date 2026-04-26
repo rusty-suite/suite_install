@@ -33,8 +33,10 @@ En installant ce logiciel, vous acceptez les conditions suivantes :
      la vérification des certificats, et le téléchargement des fichiers de langue.
 
 6. OPTION DE LANGUE
-   Une interface multilingue sera disponible dans une version future de l'installeur.
-   Actuellement, seul le français est supporté.
+   L'installeur propose une sélection de langue lors de l'installation.
+   Les langues disponibles sont déterminées par les fichiers de traduction présents
+   dans chaque dépôt GitHub des programmes de la suite.
+   La langue choisie est appliquée à l'ensemble des programmes installés.
 
 7. MISES À JOUR
    Cet installeur peut proposer des mises à jour des programmes installés.
