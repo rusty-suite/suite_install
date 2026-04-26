@@ -1,12 +1,17 @@
+use crate::state::AppState;
 use egui::{Color32, RichText, ScrollArea, Ui};
-use crate::state::{AppState, InstallOptions};
 
 pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
     let mut start_install = false;
 
     ui.vertical_centered(|ui| {
         ui.add_space(8.0);
-        ui.label(RichText::new("Programmes disponibles").size(18.0).strong().color(Color32::WHITE));
+        ui.label(
+            RichText::new("Programmes disponibles")
+                .size(18.0)
+                .strong()
+                .color(Color32::WHITE),
+        );
         ui.add_space(4.0);
         ui.label(
             RichText::new("Sélectionnez les programmes à installer. Tous sont activés par défaut.")
@@ -38,10 +43,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
             let is_selected = prog.selected;
             ui.horizontal(|ui| {
                 // Toggle switch (checkbox styled)
-                ui.toggle_value(
-                    &mut prog.selected,
-                    if is_selected { "●" } else { "○" },
-                );
+                ui.toggle_value(&mut prog.selected, if is_selected { "●" } else { "○" });
 
                 // Status badge
                 if installed {
@@ -63,7 +65,11 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
                 ui.label(
                     RichText::new(&prog.repo.name)
                         .strong()
-                        .color(if is_selected { Color32::WHITE } else { Color32::GRAY }),
+                        .color(if is_selected {
+                            Color32::WHITE
+                        } else {
+                            Color32::GRAY
+                        }),
                 );
 
                 if let Some(ver) = &prog.installed_version {
@@ -114,7 +120,10 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
     ui.label(RichText::new("Raccourcis").strong().color(Color32::WHITE));
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        ui.checkbox(&mut state.install_options.desktop_shortcut, "Créer un raccourci sur le bureau");
+        ui.checkbox(
+            &mut state.install_options.desktop_shortcut,
+            "Créer un raccourci sur le bureau",
+        );
     });
     ui.horizontal(|ui| {
         ui.checkbox(
@@ -133,14 +142,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
             format!("Installer {} programme(s)", selected_count)
         };
 
-        let btn = egui::Button::new(
-            RichText::new(label).color(Color32::WHITE).strong(),
-        )
-        .fill(if selected_count > 0 {
-            Color32::from_rgb(40, 130, 40)
-        } else {
-            Color32::from_rgb(60, 60, 60)
-        });
+        let btn = egui::Button::new(RichText::new(label).color(Color32::WHITE).strong()).fill(
+            if selected_count > 0 {
+                Color32::from_rgb(40, 130, 40)
+            } else {
+                Color32::from_rgb(60, 60, 60)
+            },
+        );
 
         if ui.add_enabled(selected_count > 0, btn).clicked() {
             start_install = true;
