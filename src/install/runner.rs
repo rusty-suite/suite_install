@@ -4,7 +4,7 @@ use crate::state::{InstallLogEntry, InstallOptions, InstallStatus};
 use std::sync::{Arc, Mutex};
 
 pub type Log = Arc<Mutex<Vec<InstallLogEntry>>>;
-type ProgramInstall = (String, Option<GithubRelease>, String, String); // (name, release, branch, language)
+type ProgramInstall = (String, Option<GithubRelease>, String, String, String); // (name, release, branch, language, lang_folder)
 
 fn log(log: &Log, app: &str, status: InstallStatus) {
     eprintln!("[suite_install][install][INFO] {app}: {status:?}");
@@ -38,7 +38,7 @@ fn action(log: &Log, app: &str, message: impl Into<String>) {
 
 pub fn install_programs(programs: Vec<ProgramInstall>, options: InstallOptions, log_out: Log) {
     std::thread::spawn(move || {
-        for (name, release, branch, language) in programs {
+        for (name, release, branch, language, lang_folder) in programs {
             eprintln!("[suite_install][install][INFO] Debut installation de {name} depuis la branche {branch}");
             action(
                 &log_out,
@@ -133,7 +133,7 @@ pub fn install_programs(programs: Vec<ProgramInstall>, options: InstallOptions, 
                 &name,
                 format!("Copie de la langue sélectionnée: {language}"),
             );
-            if let Err(e) = copy_lang_file(&name, &branch, &language, &appdata_dir) {
+            if let Err(e) = copy_lang_file(&name, &branch, &language, &lang_folder, &appdata_dir) {
                 eprintln!(
                     "[suite_install][install][ERROR] {name}: copie langue '{language}' impossible: {e}"
                 );
@@ -305,27 +305,44 @@ fn copy_lang_file(
     name: &str,
     branch: &str,
     language: &str,
+    lang_folder: &str,
     appdata_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
-    let url = github::raw_url(name, branch, &format!("lang/{language}"));
-    eprintln!("[suite_install][install][INFO] {name}: verification langue {url}");
     let client = reqwest::blocking::Client::builder()
         .user_agent("suite_install/0.1")
         .build()?;
-    let resp = client.get(&url).send()?;
-    if resp.status().is_success() {
-        let lang_dir = appdata_dir.join("lang");
-        std::fs::create_dir_all(&lang_dir)?;
-        let bytes = resp.bytes()?;
-        std::fs::write(lang_dir.join(language), &bytes)?;
-        eprintln!(
-            "[suite_install][install][INFO] {name}: fichier langue '{language}' copie dans '{}'",
-            lang_dir.display()
-        );
-    } else {
-        anyhow::bail!("lang/{language}: HTTP {}", resp.status());
+
+    // Try the requested language file, fall back to the .default.toml if not found
+    let candidates: Vec<String> = {
+        let mut v = vec![format!("{lang_folder}/{language}")];
+        // If the requested file is not the default, also queue the default as fallback
+        if !language.contains(".default.") {
+            v.push(format!("{lang_folder}/EN_en.default.toml"));
+        }
+        v
+    };
+
+    for path in &candidates {
+        let url = github::raw_url(name, branch, path);
+        eprintln!("[suite_install][install][INFO] {name}: tentative langue {url}");
+        let resp = client.get(&url).send()?;
+        if resp.status().is_success() {
+            let lang_dir = appdata_dir.join("lang");
+            std::fs::create_dir_all(&lang_dir)?;
+            let bytes = resp.bytes()?;
+            let file_name = std::path::Path::new(path).file_name().unwrap_or_default();
+            std::fs::write(lang_dir.join(file_name), &bytes)?;
+            eprintln!(
+                "[suite_install][install][INFO] {name}: langue '{}' copiee dans '{}'",
+                file_name.to_string_lossy(),
+                lang_dir.display()
+            );
+            return Ok(());
+        }
+        eprintln!("[suite_install][install][WARN] {name}: {path} absent (HTTP {}), essai suivant", resp.status());
     }
-    Ok(())
+
+    anyhow::bail!("aucun fichier de langue disponible pour {name} (cherche: {})", candidates.join(", "))
 }
 
 pub fn uninstall_programs(names: Vec<String>, log_out: Log) {

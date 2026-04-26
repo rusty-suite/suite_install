@@ -21,6 +21,8 @@ pub struct ProgramEntry {
     pub repo: GithubRepo,
     pub release: Option<GithubRelease>,
     pub languages: Vec<String>,
+    /// "langue" or "lang" — whichever folder was found in the repo
+    pub lang_folder: String,
     pub selected: bool,
     pub installed_version: Option<String>,
     pub needs_update: bool,

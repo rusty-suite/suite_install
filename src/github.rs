@@ -83,34 +83,42 @@ pub fn fetch_latest_release(repo: &str) -> anyhow::Result<Option<GithubRelease>>
     Ok(Some(release))
 }
 
-pub fn fetch_language_files(repo: &str, branch: &str) -> anyhow::Result<Vec<String>> {
+/// Returns (language_files, folder_name).
+/// Tries "langue" first (Rusty Suite convention), then "lang" as fallback.
+pub fn fetch_language_files(repo: &str, branch: &str) -> anyhow::Result<(Vec<String>, String)> {
     let client = github_client()?;
 
-    let url = format!(
-        "{}/repos/{}/{}/contents/lang?ref={}",
-        API_BASE, ORG, repo, branch
-    );
-    log_info(format!("GET {url}"));
-    let resp = client.get(&url).send()?;
-    if resp.status() == 404 {
-        log_info(format!("Aucun dossier lang pour {repo} (404)"));
-        return Ok(Vec::new());
+    for folder in ["langue", "lang"] {
+        let url = format!(
+            "{}/repos/{}/{}/contents/{}?ref={}",
+            API_BASE, ORG, repo, folder, branch
+        );
+        log_info(format!("GET {url}"));
+        let resp = client.get(&url).send()?;
+
+        if resp.status() == 404 {
+            log_info(format!("Dossier '{folder}' absent pour {repo}, essai suivant"));
+            continue;
+        }
+
+        let contents: Vec<GithubContent> = decode_json_response(resp, &url)?;
+        let mut languages: Vec<String> = contents
+            .into_iter()
+            .filter(|entry| entry.kind == "file" && entry.name.ends_with(".toml"))
+            .map(|entry| entry.name)
+            .collect();
+        languages.sort();
+
+        log_info(format!(
+            "{} langue(s) trouvee(s) pour {repo} dans '{folder}': {}",
+            languages.len(),
+            languages.join(", ")
+        ));
+        return Ok((languages, folder.to_string()));
     }
 
-    let contents: Vec<GithubContent> = decode_json_response(resp, &url)?;
-    let mut languages: Vec<String> = contents
-        .into_iter()
-        .filter(|entry| entry.kind == "file" && entry.name.ends_with(".toml"))
-        .map(|entry| entry.name)
-        .collect();
-    languages.sort();
-
-    log_info(format!(
-        "{} langue(s) trouvee(s) pour {repo}: {}",
-        languages.len(),
-        languages.join(", ")
-    ));
-    Ok(languages)
+    log_info(format!("Aucun dossier de langue trouve pour {repo}"));
+    Ok((Vec::new(), "langue".to_string()))
 }
 
 /// Returns the raw URL for a file at the root of a repo's default branch.

@@ -167,6 +167,7 @@ impl InstallerApp {
                     p.release.clone(),
                     p.repo.default_branch.clone(),
                     self.state.install_options.selected_language.clone(),
+                    p.lang_folder.clone(),
                 )
             })
             .collect();
@@ -174,7 +175,7 @@ impl InstallerApp {
         {
             let mut l = self.log.lock().unwrap();
             l.clear();
-            for (name, _, _, _) in &to_install {
+            for (name, _, _, _, _) in &to_install {
                 l.push(state::InstallLogEntry {
                     app: name.clone(),
                     status: InstallStatus::Pending,
@@ -284,18 +285,20 @@ fn load_programs() -> Result<LoadedPrograms, String> {
     let repos = github::fetch_org_repos().map_err(|e| e.to_string())?;
 
     let mut programs = Vec::new();
-    let mut common_languages: Option<BTreeSet<String>> = None;
+    let mut all_languages: BTreeSet<String> = BTreeSet::new();
 
     for repo in repos {
         let release = github::fetch_latest_release(&repo.name).ok().flatten();
-        let languages = github::fetch_language_files(&repo.name, &repo.default_branch)
-            .map_err(|e| e.to_string())?;
+        let (languages, lang_folder) = github::fetch_language_files(&repo.name, &repo.default_branch)
+            .unwrap_or_else(|e| {
+                eprintln!("[suite_install][load][WARN] {}: fetch langue impossible: {e}", repo.name);
+                (Vec::new(), "langue".to_string())
+            });
 
-        let language_set: BTreeSet<String> = languages.iter().cloned().collect();
-        common_languages = Some(match common_languages {
-            Some(common) => common.intersection(&language_set).cloned().collect(),
-            None => language_set,
-        });
+        // Union: accumulate every language found across all repos
+        for lang in &languages {
+            all_languages.insert(lang.clone());
+        }
 
         let installed = paths::read_install_record(&repo.name);
         let installed_version = installed.as_ref().map(|r| r.version.clone());
@@ -308,13 +311,20 @@ fn load_programs() -> Result<LoadedPrograms, String> {
             repo,
             release,
             languages,
+            lang_folder,
             selected: true,
             installed_version,
             needs_update,
         });
     }
 
-    let common_languages = common_languages.unwrap_or_default().into_iter().collect();
+    // Sort: default language first, then alphabetical
+    let mut common_languages: Vec<String> = all_languages.into_iter().collect();
+    common_languages.sort_by(|a, b| {
+        let a_default = a.contains(".default.");
+        let b_default = b.contains(".default.");
+        b_default.cmp(&a_default).then(a.cmp(b))
+    });
 
     Ok(LoadedPrograms {
         programs,
