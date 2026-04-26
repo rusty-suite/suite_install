@@ -28,12 +28,24 @@ pub struct ReleaseAsset {
 pub fn fetch_org_repos() -> anyhow::Result<Vec<GithubRepo>> {
     let client = github_client()?;
 
-    let url = format!("{}/orgs/{}/repos?per_page=100&type=public", API_BASE, ORG);
-    log_info(format!("GET {url}"));
-    let resp = client.get(&url).send()?;
+    let org_url = format!("{}/orgs/{}/repos?per_page=100&type=public", API_BASE, ORG);
+    log_info(format!("GET {org_url}"));
+    let mut resp = client.get(&org_url).send()?;
+
+    let (url, source_kind) = if resp.status() == 404 {
+        let user_url = format!("{}/users/{}/repos?per_page=100&type=public", API_BASE, ORG);
+        log_info(format!(
+            "{ORG} introuvable comme organisation, tentative comme utilisateur: GET {user_url}"
+        ));
+        resp = client.get(&user_url).send()?;
+        (user_url, "utilisateur")
+    } else {
+        (org_url, "organisation")
+    };
+
     let repos: Vec<GithubRepo> = decode_json_response(resp, &url)?;
     log_info(format!(
-        "{} depot(s) public(s) recus pour l'organisation {ORG}",
+        "{} depot(s) public(s) recus pour le compte {source_kind} {ORG}",
         repos.len()
     ));
 
