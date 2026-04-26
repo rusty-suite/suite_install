@@ -6,9 +6,12 @@ mod install;
 mod screens;
 mod state;
 
-use eframe::egui::{self, Color32, RichText, ViewportBuilder};
-use state::{AppState, InstallStatus, ProgramEntry, Screen};
+use eframe::egui::{
+    self, Color32, FontData, FontDefinitions, FontFamily, RichText, ViewportBuilder,
+};
 use install::{paths, runner};
+use state::{AppState, InstallStatus, ProgramEntry, Screen};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 fn main() -> eframe::Result<()> {
@@ -25,10 +28,56 @@ fn main() -> eframe::Result<()> {
         "Rusty Suite Installer",
         options,
         Box::new(|cc| {
+            setup_fonts(&cc.egui_ctx);
             setup_visuals(&cc.egui_ctx);
             Ok(Box::new(InstallerApp::new()))
         }),
     )
+}
+
+fn setup_fonts(ctx: &egui::Context) {
+    let mut fonts = FontDefinitions::default();
+
+    for (name, path) in windows_font_candidates() {
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                fonts
+                    .font_data
+                    .insert(name.to_string(), FontData::from_owned(bytes));
+
+                for family in [FontFamily::Proportional, FontFamily::Monospace] {
+                    fonts
+                        .families
+                        .entry(family)
+                        .or_default()
+                        .push(name.to_string());
+                }
+
+                eprintln!("[suite_install][fonts][INFO] Police chargee: {name} ({path})");
+            }
+            Err(err) => {
+                eprintln!(
+                    "[suite_install][fonts][WARN] Police indisponible: {name} ({path}): {err}"
+                );
+            }
+        }
+    }
+
+    ctx.set_fonts(fonts);
+}
+
+fn windows_font_candidates() -> Vec<(&'static str, String)> {
+    let windir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".to_string());
+    let fonts_dir = std::path::PathBuf::from(windir).join("Fonts");
+
+    [
+        ("segoe-ui", "segoeui.ttf"),
+        ("segoe-ui-symbol", "seguisym.ttf"),
+        ("segoe-ui-emoji", "seguiemj.ttf"),
+    ]
+    .into_iter()
+    .map(|(name, file)| (name, fonts_dir.join(file).to_string_lossy().to_string()))
+    .collect()
 }
 
 fn setup_visuals(ctx: &egui::Context) {
@@ -46,7 +95,12 @@ fn setup_visuals(ctx: &egui::Context) {
 struct InstallerApp {
     state: AppState,
     log: runner::Log,
-    load_handle: Option<std::thread::JoinHandle<Result<Vec<ProgramEntry>, String>>>,
+    load_handle: Option<std::thread::JoinHandle<Result<LoadedPrograms, String>>>,
+}
+
+struct LoadedPrograms {
+    programs: Vec<ProgramEntry>,
+    common_languages: Vec<String>,
 }
 
 impl InstallerApp {
@@ -68,11 +122,20 @@ impl InstallerApp {
     }
 
     fn poll_loading(&mut self) {
-        if self.load_handle.as_ref().map(|h| h.is_finished()).unwrap_or(false) {
+        if self
+            .load_handle
+            .as_ref()
+            .map(|h| h.is_finished())
+            .unwrap_or(false)
+        {
             if let Some(handle) = self.load_handle.take() {
                 match handle.join().unwrap_or(Err("Thread paniqué".to_string())) {
-                    Ok(programs) => {
-                        self.state.programs = programs;
+                    Ok(loaded) => {
+                        self.state.programs = loaded.programs;
+                        self.state.common_languages = loaded.common_languages;
+                        if let Some(language) = self.state.common_languages.first() {
+                            self.state.install_options.selected_language = language.clone();
+                        }
                         self.state.screen = Screen::Eula;
                     }
                     Err(e) => {
@@ -87,19 +150,25 @@ impl InstallerApp {
     fn start_installation(&mut self) {
         self.state.screen = Screen::Installing;
 
-        let to_install: Vec<_> = self.state.programs.iter()
+        let to_install: Vec<_> = self
+            .state
+            .programs
+            .iter()
             .filter(|p| p.selected)
-            .map(|p| (
-                p.repo.name.clone(),
-                p.release.clone(),
-                p.repo.default_branch.clone(),
-            ))
+            .map(|p| {
+                (
+                    p.repo.name.clone(),
+                    p.release.clone(),
+                    p.repo.default_branch.clone(),
+                    self.state.install_options.selected_language.clone(),
+                )
+            })
             .collect();
 
         {
             let mut l = self.log.lock().unwrap();
             l.clear();
-            for (name, _, _) in &to_install {
+            for (name, _, _, _) in &to_install {
                 l.push((name.clone(), InstallStatus::Pending));
             }
         }
@@ -117,33 +186,31 @@ impl eframe::App for InstallerApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            match self.state.screen.clone() {
-                Screen::Loading => {
-                    show_loading(ui, &self.state.loading_error);
-                }
-                Screen::Eula => {
-                    if screens::eula::show(ui, &mut self.state.eula_accepted) {
-                        self.state.screen = Screen::ProgramList;
-                    }
-                }
-                Screen::ProgramList => {
-                    if screens::program_list::show(ui, &mut self.state) {
-                        self.start_installation();
-                    }
-                }
-                Screen::Installing => {
-                    let log = self.log.lock().unwrap().clone();
-                    let all_done = !log.is_empty()
-                        && log.iter().all(|(_, s)| {
-                            matches!(s, InstallStatus::Done(_) | InstallStatus::Error(_))
-                        });
-                    if screens::installing::show(ui, &log, all_done) {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                }
-                Screen::Done => {}
+        egui::CentralPanel::default().show(ctx, |ui| match self.state.screen.clone() {
+            Screen::Loading => {
+                show_loading(ui, &self.state.loading_error);
             }
+            Screen::Eula => {
+                if screens::eula::show(ui, &mut self.state.eula_accepted) {
+                    self.state.screen = Screen::ProgramList;
+                }
+            }
+            Screen::ProgramList => {
+                if screens::program_list::show(ui, &mut self.state) {
+                    self.start_installation();
+                }
+            }
+            Screen::Installing => {
+                let log = self.log.lock().unwrap().clone();
+                let all_done = !log.is_empty()
+                    && log.iter().all(|(_, s)| {
+                        matches!(s, InstallStatus::Done(_) | InstallStatus::Error(_))
+                    });
+                if screens::installing::show(ui, &log, all_done) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+            Screen::Done => {}
         });
     }
 }
@@ -169,12 +236,22 @@ fn show_loading(ui: &mut egui::Ui, error: &Option<String>) {
     });
 }
 
-fn load_programs() -> Result<Vec<ProgramEntry>, String> {
+fn load_programs() -> Result<LoadedPrograms, String> {
     let repos = github::fetch_org_repos().map_err(|e| e.to_string())?;
 
     let mut programs = Vec::new();
+    let mut common_languages: Option<BTreeSet<String>> = None;
+
     for repo in repos {
         let release = github::fetch_latest_release(&repo.name).ok().flatten();
+        let languages = github::fetch_language_files(&repo.name, &repo.default_branch)
+            .map_err(|e| e.to_string())?;
+
+        let language_set: BTreeSet<String> = languages.iter().cloned().collect();
+        common_languages = Some(match common_languages {
+            Some(common) => common.intersection(&language_set).cloned().collect(),
+            None => language_set,
+        });
 
         let installed = paths::read_install_record(&repo.name);
         let installed_version = installed.as_ref().map(|r| r.version.clone());
@@ -186,11 +263,17 @@ fn load_programs() -> Result<Vec<ProgramEntry>, String> {
         programs.push(ProgramEntry {
             repo,
             release,
+            languages,
             selected: true,
             installed_version,
             needs_update,
         });
     }
 
-    Ok(programs)
+    let common_languages = common_languages.unwrap_or_default().into_iter().collect();
+
+    Ok(LoadedPrograms {
+        programs,
+        common_languages,
+    })
 }

@@ -4,6 +4,7 @@ use crate::state::{InstallOptions, InstallStatus};
 use std::sync::{Arc, Mutex};
 
 pub type Log = Arc<Mutex<Vec<(String, InstallStatus)>>>;
+type ProgramInstall = (String, Option<GithubRelease>, String, String); // (name, release, branch, language)
 
 fn log(log: &Log, app: &str, status: InstallStatus) {
     eprintln!("[suite_install][install][INFO] {app}: {status:?}");
@@ -16,13 +17,9 @@ fn log(log: &Log, app: &str, status: InstallStatus) {
     }
 }
 
-pub fn install_programs(
-    programs: Vec<(String, Option<GithubRelease>, String)>, // (name, release, branch)
-    options: InstallOptions,
-    log_out: Log,
-) {
+pub fn install_programs(programs: Vec<ProgramInstall>, options: InstallOptions, log_out: Log) {
     std::thread::spawn(move || {
-        for (name, release, branch) in programs {
+        for (name, release, branch, language) in programs {
             eprintln!("[suite_install][install][INFO] Debut installation de {name} depuis la branche {branch}");
             log(&log_out, &name, InstallStatus::Downloading(name.clone()));
 
@@ -83,7 +80,11 @@ pub fn install_programs(
             };
 
             // 4. Copy language files from repo
-            let _ = copy_lang_files(&name, &branch, &appdata_dir);
+            if let Err(e) = copy_lang_file(&name, &branch, &language, &appdata_dir) {
+                eprintln!(
+                    "[suite_install][install][ERROR] {name}: copie langue '{language}' impossible: {e}"
+                );
+            }
 
             // 5. Shortcuts
             log(
@@ -226,9 +227,13 @@ fn extract_zip(
     Ok(exe_path)
 }
 
-fn copy_lang_files(name: &str, branch: &str, appdata_dir: &std::path::Path) -> anyhow::Result<()> {
-    // Download EN_en.default.toml from the app repo
-    let url = github::raw_url(name, branch, "lang/EN_en.default.toml");
+fn copy_lang_file(
+    name: &str,
+    branch: &str,
+    language: &str,
+    appdata_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    let url = github::raw_url(name, branch, &format!("lang/{language}"));
     eprintln!("[suite_install][install][INFO] {name}: verification langue {url}");
     let client = reqwest::blocking::Client::builder()
         .user_agent("suite_install/0.1")
@@ -238,16 +243,13 @@ fn copy_lang_files(name: &str, branch: &str, appdata_dir: &std::path::Path) -> a
         let lang_dir = appdata_dir.join("lang");
         std::fs::create_dir_all(&lang_dir)?;
         let bytes = resp.bytes()?;
-        std::fs::write(lang_dir.join("EN_en.default.toml"), &bytes)?;
+        std::fs::write(lang_dir.join(language), &bytes)?;
         eprintln!(
-            "[suite_install][install][INFO] {name}: fichier langue copie dans '{}'",
+            "[suite_install][install][INFO] {name}: fichier langue '{language}' copie dans '{}'",
             lang_dir.display()
         );
     } else {
-        eprintln!(
-            "[suite_install][install][INFO] {name}: aucun fichier langue copie, statut {}",
-            resp.status()
-        );
+        anyhow::bail!("lang/{language}: HTTP {}", resp.status());
     }
     Ok(())
 }

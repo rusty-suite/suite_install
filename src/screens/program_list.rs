@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use egui::{Color32, RichText, ScrollArea, Ui};
+use egui::{Color32, ComboBox, RichText, ScrollArea, Ui};
 
 pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
     let mut start_install = false;
@@ -21,6 +21,14 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
         ui.add_space(10.0);
     });
 
+    if !state.common_languages.is_empty()
+        && !state
+            .common_languages
+            .contains(&state.install_options.selected_language)
+    {
+        state.install_options.selected_language = state.common_languages[0].clone();
+    }
+
     // Quick select toolbar
     ui.horizontal(|ui| {
         if ui.small_button("Tout sélectionner").clicked() {
@@ -34,7 +42,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
     ui.separator();
     ui.add_space(6.0);
 
-    let avail_h = ui.available_size().y - 200.0;
+    let avail_h = ui.available_size().y - 260.0;
     ScrollArea::vertical().max_height(avail_h).show(ui, |ui| {
         for prog in state.programs.iter_mut() {
             let installed = prog.installed_version.is_some();
@@ -108,6 +116,25 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
                     });
                 }
             }
+            ui.indent("languages", |ui| {
+                let languages = if prog.languages.is_empty() {
+                    "langues: aucune".to_string()
+                } else {
+                    format!(
+                        "langues: {}",
+                        prog.languages
+                            .iter()
+                            .map(|language| language_label(language))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                };
+                ui.label(
+                    RichText::new(languages)
+                        .size(11.0)
+                        .color(Color32::from_rgb(130, 130, 130)),
+                );
+            });
             ui.add_space(4.0);
         }
     });
@@ -115,6 +142,29 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
     ui.add_space(8.0);
     ui.separator();
     ui.add_space(8.0);
+
+    // Language option
+    ui.label(RichText::new("Langue").strong().color(Color32::WHITE));
+    ui.add_space(4.0);
+    if state.common_languages.is_empty() {
+        ui.label(
+            RichText::new("Aucune langue commune à tous les programmes.")
+                .color(Color32::from_rgb(220, 80, 80)),
+        );
+    } else {
+        ComboBox::from_id_salt("language_select")
+            .selected_text(language_label(&state.install_options.selected_language))
+            .show_ui(ui, |ui| {
+                for language in &state.common_languages {
+                    ui.selectable_value(
+                        &mut state.install_options.selected_language,
+                        language.clone(),
+                        language_label(language),
+                    );
+                }
+            });
+    }
+    ui.add_space(10.0);
 
     // Shortcut options
     ui.label(RichText::new("Raccourcis").strong().color(Color32::WHITE));
@@ -135,25 +185,36 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> bool {
     ui.add_space(12.0);
 
     let selected_count = state.programs.iter().filter(|p| p.selected).count();
+    let can_install = selected_count > 0 && !state.common_languages.is_empty();
     ui.horizontal(|ui| {
         let label = if selected_count == 0 {
             "Aucun programme sélectionné".to_string()
+        } else if state.common_languages.is_empty() {
+            "Aucune langue commune".to_string()
         } else {
             format!("Installer {} programme(s)", selected_count)
         };
 
         let btn = egui::Button::new(RichText::new(label).color(Color32::WHITE).strong()).fill(
-            if selected_count > 0 {
+            if can_install {
                 Color32::from_rgb(40, 130, 40)
             } else {
                 Color32::from_rgb(60, 60, 60)
             },
         );
 
-        if ui.add_enabled(selected_count > 0, btn).clicked() {
+        if ui.add_enabled(can_install, btn).clicked() {
             start_install = true;
         }
     });
 
     start_install
+}
+
+fn language_label(file_name: &str) -> String {
+    file_name
+        .strip_suffix(".default.toml")
+        .or_else(|| file_name.strip_suffix(".toml"))
+        .unwrap_or(file_name)
+        .replace('_', "-")
 }

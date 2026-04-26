@@ -33,6 +33,7 @@ l'application depuis un terminal avec `cargo run` permet de voir :
 - un extrait du corps si le JSON ne peut pas etre decode ;
 - les chemins utilises pendant l'installation ;
 - l'asset de release selectionne et son statut de telechargement.
+- les fichiers de langue trouves dans chaque depot.
 
 ## Architecture du code
 
@@ -68,13 +69,13 @@ suite_install/
   derniere release, construction des URLs raw et des URLs de certificat.
 - `src/screens/eula.rs` : ecran du contrat de licence.
 - `src/screens/program_list.rs` : liste des programmes, versions, selection et
-  options de raccourcis.
+  options de langue/raccourcis.
 - `src/screens/installing.rs` : affichage de la progression et des erreurs
   d'installation.
 - `src/install/paths.rs` : chemins d'installation, chemins AppData, dossier
   temporaire et fichier `install.json`.
 - `src/install/runner.rs` : orchestration de l'installation, telechargement des
-  assets, extraction ZIP, copie des langues et ecriture du record.
+  assets, extraction ZIP, copie de la langue choisie et ecriture du record.
 - `src/install/certificates.rs` : verification, telechargement et installation
   des certificats publics.
 - `src/install/shortcuts.rs` : creation des raccourcis Bureau et menu Demarrer
@@ -110,8 +111,8 @@ Contenu :
 
 - `install.json` : version installee, chemin de l'executable et date
   d'installation au format timestamp Unix ;
-- `lang/EN_en.default.toml` : fichier de langue copie depuis
-  `lang/EN_en.default.toml` dans le depot du programme, si present.
+- `lang/<langue>.toml` : fichier de langue choisi dans l'interface, copie
+  depuis le dossier `lang/` du depot du programme.
 
 ```text
 %APPDATA%/
@@ -141,11 +142,15 @@ Selon les options selectionnees dans l'interface :
 1. Lecture des depots publics GitHub de `rusty-suite`.
 2. Exclusion de `suite_install` et des depots commencant par `.`.
 3. Lecture de la derniere release de chaque programme.
-4. Lecture du record local `install.json`, si present.
-5. Creation des dossiers d'installation.
-6. Installation du certificat public si disponible.
-7. Telechargement de l'asset Windows depuis la derniere release.
-8. Extraction du ZIP ou copie de l'executable.
-9. Copie du fichier de langue par defaut si disponible.
-10. Creation des raccourcis demandes.
-11. Ecriture du nouveau `install.json`.
+4. Lecture des fichiers `.toml` disponibles dans le dossier `lang/` de chaque
+   depot.
+5. Calcul des langues communes a tous les programmes.
+6. Affichage uniquement des langues communes dans l'interface.
+7. Lecture du record local `install.json`, si present.
+8. Creation des dossiers d'installation.
+9. Installation du certificat public si disponible.
+10. Telechargement de l'asset Windows depuis la derniere release.
+11. Extraction du ZIP ou copie de l'executable.
+12. Copie du fichier de langue choisi.
+13. Creation des raccourcis demandes.
+14. Ecriture du nouveau `install.json`.

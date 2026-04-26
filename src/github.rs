@@ -25,6 +25,13 @@ pub struct ReleaseAsset {
     pub size: u64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct GithubContent {
+    name: String,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
 pub fn fetch_org_repos() -> anyhow::Result<Vec<GithubRepo>> {
     let client = github_client()?;
 
@@ -74,6 +81,36 @@ pub fn fetch_latest_release(repo: &str) -> anyhow::Result<Option<GithubRelease>>
         release.assets.len()
     ));
     Ok(Some(release))
+}
+
+pub fn fetch_language_files(repo: &str, branch: &str) -> anyhow::Result<Vec<String>> {
+    let client = github_client()?;
+
+    let url = format!(
+        "{}/repos/{}/{}/contents/lang?ref={}",
+        API_BASE, ORG, repo, branch
+    );
+    log_info(format!("GET {url}"));
+    let resp = client.get(&url).send()?;
+    if resp.status() == 404 {
+        log_info(format!("Aucun dossier lang pour {repo} (404)"));
+        return Ok(Vec::new());
+    }
+
+    let contents: Vec<GithubContent> = decode_json_response(resp, &url)?;
+    let mut languages: Vec<String> = contents
+        .into_iter()
+        .filter(|entry| entry.kind == "file" && entry.name.ends_with(".toml"))
+        .map(|entry| entry.name)
+        .collect();
+    languages.sort();
+
+    log_info(format!(
+        "{} langue(s) trouvee(s) pour {repo}: {}",
+        languages.len(),
+        languages.join(", ")
+    ));
+    Ok(languages)
 }
 
 /// Returns the raw URL for a file at the root of a repo's default branch.
