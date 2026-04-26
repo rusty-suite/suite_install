@@ -1,5 +1,5 @@
 // Rusty Suite Installer — main entry point
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![windows_subsystem = "windows"]
 
 mod github;
 mod install;
@@ -20,7 +20,12 @@ fn main() -> eframe::Result<()> {
             .with_title("Rusty Suite — Installeur")
             .with_inner_size([760.0, 580.0])
             .with_min_inner_size([640.0, 480.0])
-            .with_icon(eframe::icon_data::from_png_bytes(&[]).unwrap_or_default()),
+            .with_icon(
+                eframe::icon_data::from_png_bytes(
+                    include_bytes!("../assets/img/Suite-install-1.png"),
+                )
+                .unwrap_or_default(),
+            ),
         ..Default::default()
     };
 
