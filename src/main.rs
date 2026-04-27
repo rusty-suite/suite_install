@@ -4,6 +4,7 @@
 mod github;
 mod i18n;
 mod install;
+mod logger;
 mod screens;
 mod state;
 
@@ -16,6 +17,10 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 fn main() -> eframe::Result<()> {
+    // Initialize file logger first — pre-language logs are always in English.
+    logger::init();
+    logger::write("main", "INFO", "Rusty Suite Installer started");
+
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_title("Rusty Suite — Installeur")
@@ -137,23 +142,26 @@ impl InstallerApp {
             if let Some(handle) = self.load_handle.take() {
                 match handle.join().unwrap_or(Err("Thread paniqué".to_string())) {
                     Ok(loaded) => {
-                        eprintln!("[suite_install][main][INFO] Chargement OK: {} programme(s), {} langue(s) GitHub",
-                            loaded.programs.len(), loaded.common_languages.len());
+                        logger::write("main", "INFO", &format!(
+                            "Chargement OK: {} programme(s), {} langue(s) GitHub",
+                            loaded.programs.len(), loaded.common_languages.len()
+                        ));
                         for p in &loaded.programs {
-                            eprintln!("[suite_install][main][INFO]   programme='{}' release={} langues={:?}",
+                            logger::write("main", "INFO", &format!(
+                                "  programme='{}' release={} langues={:?}",
                                 p.repo.name,
-                                p.release.as_ref().map(|r| r.tag_name.as_str()).unwrap_or("AUCUNE"),
-                                p.languages);
+                                p.release.as_ref().map(|r| r.tag_name.as_str()).unwrap_or("NONE"),
+                                p.languages
+                            ));
                         }
                         self.state.programs = loaded.programs;
                         self.state.common_languages = loaded.common_languages;
-                        // Default to English; user will confirm on LanguageSelect screen.
                         self.state.install_options.selected_language =
                             screens::language::BASE_LANGUAGES[0].0.to_string();
                         self.state.screen = Screen::LanguageSelect;
                     }
                     Err(e) => {
-                        eprintln!("[suite_install][main][ERROR] Chargement échoué: {e}");
+                        logger::write("main", "ERROR", &format!("Chargement échoué: {e}"));
                         self.state.loading_error = Some(e);
                         self.state.screen = Screen::Loading;
                     }
@@ -163,11 +171,13 @@ impl InstallerApp {
     }
 
     fn start_installation(&mut self) {
-        eprintln!("[suite_install][main][INFO] === Démarrage de l'installation ===");
-        eprintln!("[suite_install][main][INFO] Langue sélectionnée: {}", self.state.install_options.selected_language);
-        eprintln!("[suite_install][main][INFO] Raccourci bureau: {}, démarrer: {}",
+        logger::write("main", "INFO", "=== Démarrage de l'installation ===");
+        logger::write("main", "INFO", &format!(
+            "langue='{}' bureau={} démarrer={}",
+            self.state.install_options.selected_language,
             self.state.install_options.desktop_shortcut,
-            self.state.install_options.quicklaunch_shortcut);
+            self.state.install_options.quicklaunch_shortcut,
+        ));
         self.state.screen = Screen::Installing;
         self.state.is_uninstall = false;
 
@@ -199,9 +209,11 @@ impl InstallerApp {
             }
         }
 
-        eprintln!("[suite_install][main][INFO] {} programme(s) à installer — thread lancé", to_install.len());
+        logger::write("main", "INFO",
+            &format!("{} programme(s) à installer — thread lancé", to_install.len()));
         let log_clone = Arc::clone(&self.log);
-        runner::install_programs(to_install, self.state.install_options.clone(), log_clone);
+        let lang = self.state.install_options.selected_language.clone();
+        runner::install_programs(to_install, self.state.install_options.clone(), log_clone, lang);
     }
 
     fn start_uninstallation(&mut self) {
@@ -229,7 +241,8 @@ impl InstallerApp {
         }
 
         let log_clone = Arc::clone(&self.log);
-        runner::uninstall_programs(to_uninstall, log_clone);
+        let lang = self.state.install_options.selected_language.clone();
+        runner::uninstall_programs(to_uninstall, log_clone, lang);
     }
 }
 

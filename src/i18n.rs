@@ -60,6 +60,43 @@ pub struct Translations {
     pub loading:                &'static str,
     /// Template: {error}
     pub loading_error:          &'static str,
+
+    // ── Runner log messages (install) — templates use {branch}, {path}, etc. ──
+    pub log_starting_install:   &'static str,
+    pub log_creating_install_dir: &'static str,
+    pub log_creating_data_dir:  &'static str,
+    pub log_checking_cert:      &'static str,
+    pub log_installing_cert:    &'static str,
+    pub log_searching_asset:    &'static str,
+    pub log_copying_lang:       &'static str,
+    pub log_creating_desktop:   &'static str,
+    pub log_creating_start:     &'static str,
+    pub log_writing_record:     &'static str,
+    pub log_install_done:       &'static str,
+    pub log_no_release:         &'static str,
+    pub log_no_windows_asset:   &'static str,
+    /// Template: {asset} {size}
+    pub log_asset_info:         &'static str,
+    /// Template: {size}
+    pub log_size_verified:      &'static str,
+    pub log_sha256_checking:    &'static str,
+    pub log_sha256_ok:          &'static str,
+    pub log_no_sha256:          &'static str,
+    pub log_extracting_zip:     &'static str,
+    /// Template: {path}
+    pub log_copying_to:         &'static str,
+
+    // ── Runner log messages (uninstall) ───────────────────────────────────────
+    /// Template: {name}
+    pub log_starting_uninstall: &'static str,
+    /// Template: {path}
+    pub log_removing:           &'static str,
+    /// Template: {path}
+    pub log_dir_already_removed: &'static str,
+    pub log_removing_shortcuts: &'static str,
+    pub log_uninstall_done:     &'static str,
+    /// Template: {path} {error}
+    pub log_cannot_remove:      &'static str,
 }
 
 // ── English ───────────────────────────────────────────────────────────────────
@@ -153,6 +190,33 @@ and accepted all of these terms.
 
     loading:               "Loading program list\u{2026}",
     loading_error:         "Error: {error}",
+
+    log_starting_install:    "Starting installation from branch {branch}",
+    log_creating_install_dir: "Creating install directory: {path}",
+    log_creating_data_dir:   "Creating data directory: {path}",
+    log_checking_cert:       "Checking certificate: {url}",
+    log_installing_cert:     "Installing public certificate",
+    log_searching_asset:     "Searching for and downloading Windows asset",
+    log_copying_lang:        "Copying selected language: {lang}",
+    log_creating_desktop:    "Creating desktop shortcut",
+    log_creating_start:      "Creating Start Menu shortcut",
+    log_writing_record:      "Writing install.json file",
+    log_install_done:        "Installation complete",
+    log_no_release:          "no release available",
+    log_no_windows_asset:    "no Windows asset found in release",
+    log_asset_info:          "Asset: {asset} ({size})",
+    log_size_verified:       "Size verified: {size}",
+    log_sha256_checking:     "Verifying SHA-256\u{2026}",
+    log_sha256_ok:           "SHA-256 validated \u{2713}",
+    log_no_sha256:           "No .sha256 file provided \u{2014} size check only",
+    log_extracting_zip:      "Extracting ZIP archive",
+    log_copying_to:          "Copying to {path}",
+    log_starting_uninstall:  "Starting uninstallation of {name}",
+    log_removing:            "Removing {path}",
+    log_dir_already_removed: "Install directory not found (already removed): {path}",
+    log_removing_shortcuts:  "Removing shortcuts",
+    log_uninstall_done:      "Uninstallation complete",
+    log_cannot_remove:       "\u{26a0} Cannot remove {path}: {error}",
 };
 
 // ── French (Switzerland) ──────────────────────────────────────────────────────
@@ -246,6 +310,33 @@ et accepté l'intégralité des présentes conditions.
 
     loading:               "Chargement de la liste des programmes\u{2026}",
     loading_error:         "Erreur : {error}",
+
+    log_starting_install:    "Démarrage de l'installation depuis la branche {branch}",
+    log_creating_install_dir: "Création du dossier d'installation: {path}",
+    log_creating_data_dir:   "Création du dossier de données: {path}",
+    log_checking_cert:       "Vérification du certificat: {url}",
+    log_installing_cert:     "Installation du certificat public",
+    log_searching_asset:     "Recherche et téléchargement de l'asset Windows",
+    log_copying_lang:        "Copie de la langue sélectionnée: {lang}",
+    log_creating_desktop:    "Création du raccourci Bureau",
+    log_creating_start:      "Création du raccourci Menu Démarrer",
+    log_writing_record:      "Écriture du fichier install.json",
+    log_install_done:        "Installation terminée",
+    log_no_release:          "aucune release disponible",
+    log_no_windows_asset:    "pas d'asset Windows trouvé dans la release",
+    log_asset_info:          "Asset: {asset} ({size})",
+    log_size_verified:       "Taille vérifiée: {size}",
+    log_sha256_checking:     "Vérification SHA-256\u{2026}",
+    log_sha256_ok:           "SHA-256 validé \u{2713}",
+    log_no_sha256:           "Aucun fichier .sha256 fourni \u{2014} vérification de taille uniquement",
+    log_extracting_zip:      "Extraction de l'archive ZIP",
+    log_copying_to:          "Copie vers {path}",
+    log_starting_uninstall:  "Démarrage de la désinstallation de {name}",
+    log_removing:            "Suppression de {path}",
+    log_dir_already_removed: "Dossier install absent (déjà supprimé): {path}",
+    log_removing_shortcuts:  "Suppression des raccourcis",
+    log_uninstall_done:      "Désinstallation terminée",
+    log_cannot_remove:       "\u{26a0} Impossible de supprimer {path}: {error}",
 };
 
 // ── German (Switzerland) ──────────────────────────────────────────────────────
@@ -339,6 +430,33 @@ diese Bedingungen gelesen, verstanden und akzeptiert haben.
 
     loading:               "Programmliste wird geladen\u{2026}",
     loading_error:         "Fehler: {error}",
+
+    log_starting_install:    "Installation wird gestartet von Branch {branch}",
+    log_creating_install_dir: "Installationsverzeichnis wird erstellt: {path}",
+    log_creating_data_dir:   "Datenverzeichnis wird erstellt: {path}",
+    log_checking_cert:       "Zertifikat wird geprüft: {url}",
+    log_installing_cert:     "Öffentliches Zertifikat wird installiert",
+    log_searching_asset:     "Windows-Asset wird gesucht und heruntergeladen",
+    log_copying_lang:        "Ausgewählte Sprache wird kopiert: {lang}",
+    log_creating_desktop:    "Desktop-Verknüpfung wird erstellt",
+    log_creating_start:      "Startmenü-Verknüpfung wird erstellt",
+    log_writing_record:      "install.json wird geschrieben",
+    log_install_done:        "Installation abgeschlossen",
+    log_no_release:          "keine Release verfügbar",
+    log_no_windows_asset:    "kein Windows-Asset in der Release gefunden",
+    log_asset_info:          "Asset: {asset} ({size})",
+    log_size_verified:       "Grösse überprüft: {size}",
+    log_sha256_checking:     "SHA-256 wird überprüft\u{2026}",
+    log_sha256_ok:           "SHA-256 validiert \u{2713}",
+    log_no_sha256:           "Keine .sha256-Datei vorhanden \u{2014} nur Grössenprüfung",
+    log_extracting_zip:      "ZIP-Archiv wird entpackt",
+    log_copying_to:          "Wird kopiert nach {path}",
+    log_starting_uninstall:  "Deinstallation von {name} wird gestartet",
+    log_removing:            "Wird entfernt: {path}",
+    log_dir_already_removed: "Installationsverzeichnis nicht gefunden (bereits entfernt): {path}",
+    log_removing_shortcuts:  "Verknüpfungen werden entfernt",
+    log_uninstall_done:      "Deinstallation abgeschlossen",
+    log_cannot_remove:       "\u{26a0} Kann {path} nicht entfernen: {error}",
 };
 
 // ── Italian (Switzerland) ─────────────────────────────────────────────────────
@@ -432,6 +550,33 @@ e accettato integralmente queste condizioni.
 
     loading:               "Caricamento dell'elenco dei programmi\u{2026}",
     loading_error:         "Errore: {error}",
+
+    log_starting_install:    "Avvio dell'installazione dal branch {branch}",
+    log_creating_install_dir: "Creazione della cartella di installazione: {path}",
+    log_creating_data_dir:   "Creazione della cartella dati: {path}",
+    log_checking_cert:       "Verifica del certificato: {url}",
+    log_installing_cert:     "Installazione del certificato pubblico",
+    log_searching_asset:     "Ricerca e download dell'asset Windows",
+    log_copying_lang:        "Copia della lingua selezionata: {lang}",
+    log_creating_desktop:    "Creazione del collegamento sul Desktop",
+    log_creating_start:      "Creazione del collegamento nel Menu Start",
+    log_writing_record:      "Scrittura del file install.json",
+    log_install_done:        "Installazione completata",
+    log_no_release:          "nessuna release disponibile",
+    log_no_windows_asset:    "nessun asset Windows trovato nella release",
+    log_asset_info:          "Asset: {asset} ({size})",
+    log_size_verified:       "Dimensione verificata: {size}",
+    log_sha256_checking:     "Verifica SHA-256\u{2026}",
+    log_sha256_ok:           "SHA-256 validato \u{2713}",
+    log_no_sha256:           "Nessun file .sha256 fornito \u{2014} solo verifica della dimensione",
+    log_extracting_zip:      "Estrazione dell'archivio ZIP",
+    log_copying_to:          "Copia in {path}",
+    log_starting_uninstall:  "Avvio della disinstallazione di {name}",
+    log_removing:            "Rimozione di {path}",
+    log_dir_already_removed: "Cartella di installazione non trovata (già rimossa): {path}",
+    log_removing_shortcuts:  "Rimozione dei collegamenti",
+    log_uninstall_done:      "Disinstallazione completata",
+    log_cannot_remove:       "\u{26a0} Impossibile rimuovere {path}: {error}",
 };
 
 // ── Selector ──────────────────────────────────────────────────────────────────
