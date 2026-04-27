@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-const ORG: &str = "rusty-suite";
+pub const ORG: &str = "rusty-suite";
 const API_BASE: &str = "https://api.github.com";
 const USER_AGENT: &str = "suite_install/0.1";
 
@@ -16,6 +16,10 @@ pub struct GithubRepo {
 pub struct GithubRelease {
     pub tag_name: String,
     pub assets: Vec<ReleaseAsset>,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub prerelease: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -36,12 +40,12 @@ pub fn fetch_org_repos() -> anyhow::Result<Vec<GithubRepo>> {
     let client = github_client()?;
 
     let org_url = format!("{}/orgs/{}/repos?per_page=100&type=public", API_BASE, ORG);
-    log_info(format!("GET {org_url}"));
+    crate::logger::write("github", "INFO", &format!("GET {org_url}"));
     let mut resp = client.get(&org_url).send()?;
 
     let (url, source_kind) = if resp.status() == 404 {
         let user_url = format!("{}/users/{}/repos?per_page=100&type=public", API_BASE, ORG);
-        log_info(format!(
+        crate::logger::write("github", "INFO", &format!(
             "{ORG} introuvable comme organisation, tentative comme utilisateur: GET {user_url}"
         ));
         resp = client.get(&user_url).send()?;
@@ -51,15 +55,16 @@ pub fn fetch_org_repos() -> anyhow::Result<Vec<GithubRepo>> {
     };
 
     let repos: Vec<GithubRepo> = decode_json_response(resp, &url)?;
-    log_info(format!(
+    crate::logger::write("github", "INFO", &format!(
         "{} depot(s) public(s) recus pour le compte {source_kind} {ORG}",
         repos.len()
     ));
 
-    // exclude the installer itself and meta repos
+    // exclude the installer itself, the org meta-repo, and infrastructure repos
+    let excluded = ["suite_install", "rusty-suite"];
     let filtered = repos
         .into_iter()
-        .filter(|r| r.name != "suite_install" && !r.name.starts_with('.'))
+        .filter(|r| !excluded.contains(&r.name.as_str()) && !r.name.starts_with('.'))
         .collect();
     Ok(filtered)
 }
@@ -67,20 +72,73 @@ pub fn fetch_org_repos() -> anyhow::Result<Vec<GithubRepo>> {
 pub fn fetch_latest_release(repo: &str) -> anyhow::Result<Option<GithubRelease>> {
     let client = github_client()?;
 
+    // Try /releases/latest first
     let url = format!("{}/repos/{}/{}/releases/latest", API_BASE, ORG, repo);
-    log_info(format!("GET {url}"));
+    crate::logger::write("github", "INFO", &format!("GET {url}"));
     let resp = client.get(&url).send()?;
-    if resp.status() == 404 {
-        log_info(format!("Aucune release latest pour {repo} (404)"));
+    let status = resp.status();
+
+    if status.is_success() {
+        let release: GithubRelease = decode_json_response(resp, &url)?;
+        crate::logger::write("github", "INFO", &format!(
+            "Release latest pour {repo}: {} avec {} asset(s)",
+            release.tag_name, release.assets.len()
+        ));
+        return Ok(Some(release));
+    }
+
+    // Fallback: list API — picks first non-draft release
+    drop(resp);
+    crate::logger::write("github", "INFO", &format!(
+        "Pas de release 'latest' pour {repo} ({status}), fallback liste"
+    ));
+    let list_url = format!("{}/repos/{}/{}/releases?per_page=20", API_BASE, ORG, repo);
+    crate::logger::write("github", "INFO", &format!("GET {list_url}"));
+    let resp2 = client.get(&list_url).send()?;
+
+    if !resp2.status().is_success() {
+        crate::logger::write("github", "WARN", &format!(
+            "Aucune release pour {repo} ({})", resp2.status()
+        ));
         return Ok(None);
     }
-    let release: GithubRelease = decode_json_response(resp, &url)?;
-    log_info(format!(
-        "Release latest recue pour {repo}: {} avec {} asset(s)",
-        release.tag_name,
-        release.assets.len()
-    ));
-    Ok(Some(release))
+
+    let releases: Vec<GithubRelease> = decode_json_response(resp2, &list_url)?;
+    let release = releases.into_iter().find(|r| !r.draft);
+
+    match &release {
+        Some(r) => crate::logger::write("github", "INFO", &format!(
+            "Release fallback pour {repo}: {} avec {} asset(s)", r.tag_name, r.assets.len()
+        )),
+        None => crate::logger::write("github", "WARN", &format!(
+            "Aucune release non-draft pour {repo}"
+        )),
+    }
+
+    Ok(release)
+}
+
+/// HEAD request to api.github.com to verify connectivity. Returns latency in ms.
+pub fn check_connectivity() -> Result<u64, String> {
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let url = format!("{}/orgs/{}", API_BASE, ORG);
+    let start = std::time::Instant::now();
+    let resp = client.get(&url).send()
+        .map_err(|e| format!("connexion échouée: {e}"))?;
+    let ms = start.elapsed().as_millis() as u64;
+
+    // 200 or 404 (unauthenticated rate-limit) both confirm reachability
+    let s = resp.status();
+    if s.is_success() || s == 404 {
+        Ok(ms)
+    } else {
+        Err(format!("HTTP {s}"))
+    }
 }
 
 /// Returns (language_files, folder_name).
@@ -93,11 +151,13 @@ pub fn fetch_language_files(repo: &str, branch: &str) -> anyhow::Result<(Vec<Str
             "{}/repos/{}/{}/contents/{}?ref={}",
             API_BASE, ORG, repo, folder, branch
         );
-        log_info(format!("GET {url}"));
+        crate::logger::write("github", "INFO", &format!("GET {url}"));
         let resp = client.get(&url).send()?;
 
         if resp.status() == 404 {
-            log_info(format!("Dossier '{folder}' absent pour {repo}, essai suivant"));
+            crate::logger::write("github", "INFO", &format!(
+                "Dossier '{folder}' absent pour {repo}, essai suivant"
+            ));
             continue;
         }
 
@@ -109,7 +169,7 @@ pub fn fetch_language_files(repo: &str, branch: &str) -> anyhow::Result<(Vec<Str
             .collect();
         languages.sort();
 
-        log_info(format!(
+        crate::logger::write("github", "INFO", &format!(
             "{} langue(s) trouvee(s) pour {repo} dans '{folder}': {}",
             languages.len(),
             languages.join(", ")
@@ -117,7 +177,7 @@ pub fn fetch_language_files(repo: &str, branch: &str) -> anyhow::Result<(Vec<Str
         return Ok((languages, folder.to_string()));
     }
 
-    log_info(format!("Aucun dossier de langue trouve pour {repo}"));
+    crate::logger::write("github", "INFO", &format!("Aucun dossier de langue trouve pour {repo}"));
     Ok((Vec::new(), "langue".to_string()))
 }
 
@@ -153,18 +213,18 @@ where
         .to_string();
 
     let body = resp.text().map_err(|err| {
-        log_error(format!("Lecture du corps impossible pour {url}: {err}"));
+        crate::logger::write("github", "ERROR", &format!("Lecture du corps impossible pour {url}: {err}"));
         anyhow::anyhow!("lecture de la reponse GitHub impossible ({status}) pour {url}: {err}")
     })?;
 
-    log_info(format!(
+    crate::logger::write("github", "INFO", &format!(
         "Reponse {status} depuis {url} (content-type: {content_type}, {} octet(s))",
         body.len()
     ));
 
     if !status.is_success() {
         let excerpt = body_excerpt(&body);
-        log_error(format!(
+        crate::logger::write("github", "ERROR", &format!(
             "Statut HTTP inattendu pour {url}: {status}; corps: {excerpt}"
         ));
         anyhow::bail!("GitHub a retourne {status} pour {url}: {excerpt}");
@@ -172,7 +232,7 @@ where
 
     serde_json::from_str(&body).map_err(|err| {
         let excerpt = body_excerpt(&body);
-        log_error(format!(
+        crate::logger::write("github", "ERROR", &format!(
             "JSON invalide pour {url}: {err}; content-type: {content_type}; corps: {excerpt}"
         ));
         anyhow::anyhow!("decodage JSON impossible pour {url}: {err}. Extrait: {excerpt}")
@@ -186,12 +246,4 @@ fn body_excerpt(body: &str) -> String {
         excerpt.push_str("...");
     }
     excerpt
-}
-
-fn log_info(message: impl AsRef<str>) {
-    eprintln!("[suite_install][github][INFO] {}", message.as_ref());
-}
-
-fn log_error(message: impl AsRef<str>) {
-    eprintln!("[suite_install][github][ERROR] {}", message.as_ref());
 }

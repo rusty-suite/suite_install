@@ -51,6 +51,8 @@ pub fn install_programs(
             "=== Installation démarrée — {} programme(s) — langue: {lang} ===", programs.len()
         ));
 
+        run_precheck(&programs, &log_out, t);
+
         for (name, release, branch, language, lang_folder) in programs {
             // ── Start ─────────────────────────────────────────────────────────
             action(&log_out, &name,
@@ -266,19 +268,123 @@ fn download_binary(
 fn pick_windows_asset(assets: &[ReleaseAsset]) -> Option<&ReleaseAsset> {
     let is_checksum =
         |n: &str| n.ends_with(".sha256") || n.ends_with(".sha256sum") || n.ends_with(".md5");
+
     assets.iter()
         .filter(|a| !is_checksum(&a.name))
-        .max_by_key(|a| {
+        .filter_map(|a| {
             let n = a.name.to_lowercase();
-            (if n.contains("x86_64") || n.contains("x64") || n.contains("amd64") { 4 } else { 0 })
-          + (if n.contains("windows") || n.contains("win") { 2 } else { 0 })
-          + (if n.ends_with(".exe") || n.ends_with(".zip") { 1 } else { 0 })
+            let mut score: i32 = 0;
+
+            if n.ends_with(".exe")      { score += 4; }
+            else if n.ends_with(".msi") { score += 3; }
+            else if n.ends_with(".zip") { score += 2; }
+
+            if n.contains("windows") || n.contains("win") { score += 6; }
+            if n.contains("x86_64") || n.contains("x64") || n.contains("amd64") { score += 8; }
+
+            if n.contains("linux") || n.contains("darwin") || n.contains("macos") || n.contains("mac-") {
+                score -= 20;
+            }
+
+            if score > -10 { Some((a, score)) } else { None }
         })
-        .filter(|a| {
-            let n = a.name.to_lowercase();
-            n.ends_with(".exe") || n.ends_with(".zip")
-                || n.contains("windows") || n.contains("win")
-        })
+        .max_by_key(|(_, s)| *s)
+        .map(|(a, _)| a)
+}
+
+// ── Pre-check phase ───────────────────────────────────────────────────────────
+
+fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Translations) {
+    let key = t.precheck_title;
+
+    {
+        let mut l = log.lock().unwrap();
+        l.insert(0, crate::state::InstallLogEntry {
+            app: key.to_string(),
+            status: crate::state::InstallStatus::Installing(key.to_string()),
+            actions: Vec::new(),
+        });
+    }
+
+    // 1. Connectivity
+    action(log, key, t.precheck_checking_conn);
+    let conn_ms = match crate::github::check_connectivity() {
+        Ok(ms) => {
+            action(log, key, t.precheck_conn_ok.replace("{ms}", &ms.to_string()));
+            crate::logger::write("runner", "INFO", &format!("GitHub joignable en {ms}ms"));
+            Some(ms)
+        }
+        Err(e) => {
+            action(log, key, t.precheck_conn_failed.replace("{error}", &e));
+            crate::logger::write("runner", "WARN", &format!("GitHub inaccessible: {e}"));
+            None
+        }
+    };
+
+    // 2. Total download size from selected assets
+    let total_bytes: u64 = programs.iter()
+        .filter_map(|(_, release, _, _, _)| release.as_ref())
+        .filter_map(|r| pick_windows_asset(&r.assets))
+        .map(|a| a.size)
+        .sum();
+
+    if total_bytes > 0 {
+        let msg = t.precheck_total_size.replace("{size}", &human_size(total_bytes));
+        action(log, key, &msg);
+        crate::logger::write("runner", "INFO", &msg);
+    }
+
+    // 3. Speed test + ETA (only if connectivity confirmed)
+    if conn_ms.is_some() {
+        action(log, key, t.precheck_speed_test);
+        match estimate_speed_bps() {
+            Ok(bps) if bps > 0 => {
+                let msg = t.precheck_speed.replace("{speed}", &human_speed(bps));
+                action(log, key, &msg);
+                crate::logger::write("runner", "INFO", &msg);
+
+                if total_bytes > 0 {
+                    let eta_secs = total_bytes / bps.max(1);
+                    let eta_msg = t.precheck_eta.replace("{eta}", &format_eta(eta_secs));
+                    action(log, key, &eta_msg);
+                    crate::logger::write("runner", "INFO", &eta_msg);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    set_status(log, key, crate::state::InstallStatus::Done(t.precheck_done.to_string()));
+    crate::logger::write("runner", "INFO", "Pré-vérification terminée");
+}
+
+fn estimate_speed_bps() -> Result<u64, String> {
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("suite_install/0.1")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let url = format!("https://api.github.com/orgs/{}", crate::github::ORG);
+    let start = std::time::Instant::now();
+    let resp = client.get(&url).send().map_err(|e| e.to_string())?;
+    let bytes = resp.bytes().map_err(|e| e.to_string())?;
+    let elapsed = start.elapsed();
+
+    let secs = elapsed.as_secs_f64().max(0.001);
+    Ok((bytes.len() as f64 / secs) as u64)
+}
+
+fn human_speed(bps: u64) -> String {
+    if bps < 1024 { format!("{bps} B/s") }
+    else if bps < 1024 * 1024 { format!("{:.1} KB/s", bps as f64 / 1024.0) }
+    else { format!("{:.1} MB/s", bps as f64 / 1024.0 / 1024.0) }
+}
+
+fn format_eta(secs: u64) -> String {
+    if secs < 60 { format!("{secs}s") }
+    else if secs < 3600 { format!("{}m {:02}s", secs / 60, secs % 60) }
+    else { format!("{}h {:02}m", secs / 3600, (secs % 3600) / 60) }
 }
 
 fn fetch_bytes(

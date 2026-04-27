@@ -97,6 +97,22 @@ pub struct Translations {
     pub log_uninstall_done:     &'static str,
     /// Template: {path} {error}
     pub log_cannot_remove:      &'static str,
+
+    // ── Pre-check phase ───────────────────────────────────────────────────────
+    pub precheck_title:         &'static str,
+    pub precheck_checking_conn: &'static str,
+    /// Template: {ms}
+    pub precheck_conn_ok:       &'static str,
+    /// Template: {error}
+    pub precheck_conn_failed:   &'static str,
+    /// Template: {size}
+    pub precheck_total_size:    &'static str,
+    pub precheck_speed_test:    &'static str,
+    /// Template: {speed}
+    pub precheck_speed:         &'static str,
+    /// Template: {eta}
+    pub precheck_eta:           &'static str,
+    pub precheck_done:          &'static str,
 }
 
 // ── English ───────────────────────────────────────────────────────────────────
@@ -217,6 +233,16 @@ and accepted all of these terms.
     log_removing_shortcuts:  "Removing shortcuts",
     log_uninstall_done:      "Uninstallation complete",
     log_cannot_remove:       "\u{26a0} Cannot remove {path}: {error}",
+
+    precheck_title:         "Pre-installation check",
+    precheck_checking_conn: "Checking GitHub connectivity\u{2026}",
+    precheck_conn_ok:       "GitHub reachable ({ms} ms)",
+    precheck_conn_failed:   "GitHub unreachable: {error}",
+    precheck_total_size:    "Total to download: {size}",
+    precheck_speed_test:    "Measuring connection speed\u{2026}",
+    precheck_speed:         "Speed: {speed}",
+    precheck_eta:           "Estimated time: {eta}",
+    precheck_done:          "Pre-check complete",
 };
 
 // ── French (Switzerland) ──────────────────────────────────────────────────────
@@ -337,6 +363,16 @@ et accepté l'intégralité des présentes conditions.
     log_removing_shortcuts:  "Suppression des raccourcis",
     log_uninstall_done:      "Désinstallation terminée",
     log_cannot_remove:       "\u{26a0} Impossible de supprimer {path}: {error}",
+
+    precheck_title:         "Vérification préalable",
+    precheck_checking_conn: "Vérification de la connectivité GitHub\u{2026}",
+    precheck_conn_ok:       "GitHub accessible ({ms} ms)",
+    precheck_conn_failed:   "GitHub inaccessible : {error}",
+    precheck_total_size:    "Total à télécharger : {size}",
+    precheck_speed_test:    "Mesure de la vitesse de connexion\u{2026}",
+    precheck_speed:         "Vitesse : {speed}",
+    precheck_eta:           "Durée estimée : {eta}",
+    precheck_done:          "Vérification terminée",
 };
 
 // ── German (Switzerland) ──────────────────────────────────────────────────────
@@ -457,6 +493,16 @@ diese Bedingungen gelesen, verstanden und akzeptiert haben.
     log_removing_shortcuts:  "Verknüpfungen werden entfernt",
     log_uninstall_done:      "Deinstallation abgeschlossen",
     log_cannot_remove:       "\u{26a0} Kann {path} nicht entfernen: {error}",
+
+    precheck_title:         "Vorinstallationsprüfung",
+    precheck_checking_conn: "GitHub-Verbindung wird geprüft\u{2026}",
+    precheck_conn_ok:       "GitHub erreichbar ({ms} ms)",
+    precheck_conn_failed:   "GitHub nicht erreichbar: {error}",
+    precheck_total_size:    "Gesamtdownload: {size}",
+    precheck_speed_test:    "Verbindungsgeschwindigkeit wird gemessen\u{2026}",
+    precheck_speed:         "Geschwindigkeit: {speed}",
+    precheck_eta:           "Geschätzte Zeit: {eta}",
+    precheck_done:          "Vorprüfung abgeschlossen",
 };
 
 // ── Italian (Switzerland) ─────────────────────────────────────────────────────
@@ -577,6 +623,16 @@ e accettato integralmente queste condizioni.
     log_removing_shortcuts:  "Rimozione dei collegamenti",
     log_uninstall_done:      "Disinstallazione completata",
     log_cannot_remove:       "\u{26a0} Impossibile rimuovere {path}: {error}",
+
+    precheck_title:         "Verifica preliminare",
+    precheck_checking_conn: "Verifica della connettività GitHub\u{2026}",
+    precheck_conn_ok:       "GitHub raggiungibile ({ms} ms)",
+    precheck_conn_failed:   "GitHub non raggiungibile: {error}",
+    precheck_total_size:    "Totale da scaricare: {size}",
+    precheck_speed_test:    "Misurazione della velocità di connessione\u{2026}",
+    precheck_speed:         "Velocità: {speed}",
+    precheck_eta:           "Tempo stimato: {eta}",
+    precheck_done:          "Verifica preliminare completata",
 };
 
 // ── Selector ──────────────────────────────────────────────────────────────────

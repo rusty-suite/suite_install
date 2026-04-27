@@ -36,7 +36,9 @@ fn start_menu_programs_dir() -> Result<PathBuf> {
 
 #[cfg(windows)]
 fn create_lnk(lnk_path: &Path, target: &Path) -> Result<()> {
-    // Use PowerShell to create the shortcut — no COM dependency
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
     let script = format!(
         r#"$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut('{}'); $sc.TargetPath = '{}'; $sc.Save()"#,
         lnk_path.display(),
@@ -44,6 +46,7 @@ fn create_lnk(lnk_path: &Path, target: &Path) -> Result<()> {
     );
     let status = std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .creation_flags(CREATE_NO_WINDOW)
         .status()?;
     if status.success() {
         Ok(())

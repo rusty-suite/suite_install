@@ -19,9 +19,12 @@ pub fn install_certificate(cert_url: &str, app_name: &str, temp_dir: &Path) -> R
 
 #[cfg(windows)]
 fn install_cert_windows(cert_path: &Path) -> anyhow::Result<()> {
-    // certutil -addstore -user "Root" <cert_path>
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
     let status = std::process::Command::new("certutil")
         .args(["-addstore", "-user", "Root", cert_path.to_str().unwrap()])
+        .creation_flags(CREATE_NO_WINDOW)
         .status()?;
     if status.success() {
         Ok(())
