@@ -2,6 +2,7 @@
 #![windows_subsystem = "windows"]
 
 mod github;
+mod i18n;
 mod install;
 mod screens;
 mod state;
@@ -136,14 +137,23 @@ impl InstallerApp {
             if let Some(handle) = self.load_handle.take() {
                 match handle.join().unwrap_or(Err("Thread paniqué".to_string())) {
                     Ok(loaded) => {
+                        eprintln!("[suite_install][main][INFO] Chargement OK: {} programme(s), {} langue(s) GitHub",
+                            loaded.programs.len(), loaded.common_languages.len());
+                        for p in &loaded.programs {
+                            eprintln!("[suite_install][main][INFO]   programme='{}' release={} langues={:?}",
+                                p.repo.name,
+                                p.release.as_ref().map(|r| r.tag_name.as_str()).unwrap_or("AUCUNE"),
+                                p.languages);
+                        }
                         self.state.programs = loaded.programs;
                         self.state.common_languages = loaded.common_languages;
-                        if let Some(language) = self.state.common_languages.first() {
-                            self.state.install_options.selected_language = language.clone();
-                        }
-                        self.state.screen = Screen::Eula;
+                        // Default to English; user will confirm on LanguageSelect screen.
+                        self.state.install_options.selected_language =
+                            screens::language::BASE_LANGUAGES[0].0.to_string();
+                        self.state.screen = Screen::LanguageSelect;
                     }
                     Err(e) => {
+                        eprintln!("[suite_install][main][ERROR] Chargement échoué: {e}");
                         self.state.loading_error = Some(e);
                         self.state.screen = Screen::Loading;
                     }
@@ -153,6 +163,11 @@ impl InstallerApp {
     }
 
     fn start_installation(&mut self) {
+        eprintln!("[suite_install][main][INFO] === Démarrage de l'installation ===");
+        eprintln!("[suite_install][main][INFO] Langue sélectionnée: {}", self.state.install_options.selected_language);
+        eprintln!("[suite_install][main][INFO] Raccourci bureau: {}, démarrer: {}",
+            self.state.install_options.desktop_shortcut,
+            self.state.install_options.quicklaunch_shortcut);
         self.state.screen = Screen::Installing;
         self.state.is_uninstall = false;
 
@@ -184,6 +199,7 @@ impl InstallerApp {
             }
         }
 
+        eprintln!("[suite_install][main][INFO] {} programme(s) à installer — thread lancé", to_install.len());
         let log_clone = Arc::clone(&self.log);
         runner::install_programs(to_install, self.state.install_options.clone(), log_clone);
     }
@@ -225,17 +241,32 @@ impl eframe::App for InstallerApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }
 
+        // Derive translations from the currently selected language (fast static lookup).
+        let t = i18n::get(&self.state.install_options.selected_language);
+
         egui::CentralPanel::default().show(ctx, |ui| match self.state.screen.clone() {
             Screen::Loading => {
-                show_loading(ui, &self.state.loading_error);
+                show_loading(ui, &self.state.loading_error, t);
+            }
+            Screen::LanguageSelect => {
+                let extra = self.state.common_languages.clone();
+                if screens::language::show(
+                    ui,
+                    &mut self.state.install_options.selected_language,
+                    &extra,
+                    t,
+                ) {
+                    self.state.screen = Screen::Eula;
+                }
             }
             Screen::Eula => {
-                if screens::eula::show(ui, &mut self.state.eula_accepted) {
+                if screens::eula::show(ui, &mut self.state.eula_accepted, t) {
                     self.state.screen = Screen::ProgramList;
                 }
             }
             Screen::ProgramList => {
-                let (do_install, do_uninstall) = screens::program_list::show(ui, &mut self.state);
+                let (do_install, do_uninstall) =
+                    screens::program_list::show(ui, &mut self.state, t);
                 if do_install {
                     self.start_installation();
                 } else if do_uninstall {
@@ -251,7 +282,7 @@ impl eframe::App for InstallerApp {
                             InstallStatus::Done(_) | InstallStatus::Error(_)
                         )
                     });
-                if screens::installing::show(ui, &log, all_done, self.state.is_uninstall) {
+                if screens::installing::show(ui, &log, all_done, self.state.is_uninstall, t) {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
@@ -260,18 +291,18 @@ impl eframe::App for InstallerApp {
     }
 }
 
-fn show_loading(ui: &mut egui::Ui, error: &Option<String>) {
+fn show_loading(ui: &mut egui::Ui, error: &Option<String>, t: &i18n::Translations) {
     ui.vertical_centered(|ui| {
         ui.add_space(80.0);
         if let Some(err) = error {
             ui.label(
-                RichText::new(format!("Erreur : {}", err))
+                RichText::new(t.loading_error.replace("{error}", err))
                     .color(Color32::from_rgb(220, 80, 80))
                     .size(15.0),
             );
         } else {
             ui.label(
-                RichText::new("Chargement de la liste des programmes…")
+                RichText::new(t.loading)
                     .size(16.0)
                     .color(Color32::from_rgb(160, 160, 160)),
             );
@@ -295,7 +326,6 @@ fn load_programs() -> Result<LoadedPrograms, String> {
                 (Vec::new(), "langue".to_string())
             });
 
-        // Union: accumulate every language found across all repos
         for lang in &languages {
             all_languages.insert(lang.clone());
         }
@@ -318,7 +348,6 @@ fn load_programs() -> Result<LoadedPrograms, String> {
         });
     }
 
-    // Sort: default language first, then alphabetical
     let mut common_languages: Vec<String> = all_languages.into_iter().collect();
     common_languages.sort_by(|a, b| {
         let a_default = a.contains(".default.");

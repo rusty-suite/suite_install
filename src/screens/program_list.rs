@@ -1,3 +1,5 @@
+use crate::i18n::Translations;
+use crate::screens::language::BASE_LANGUAGES;
 use crate::state::{AppState, ListMode};
 use egui::{
     Color32, ComboBox, Frame, Id, Margin, RichText, Rounding, ScrollArea, Sense, Stroke, Ui, Vec2,
@@ -5,35 +7,35 @@ use egui::{
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 
-const CARD_BG_OFF:  Color32 = Color32::from_rgb(28, 28, 36);
-const CARD_BG_ON:   Color32 = Color32::from_rgb(22, 42, 68);
+const CARD_BG_OFF:     Color32 = Color32::from_rgb(28, 28, 36);
+const CARD_BG_ON:      Color32 = Color32::from_rgb(22, 42, 68);
 const CARD_BORDER_OFF: Color32 = Color32::from_rgb(50, 50, 62);
 const CARD_BORDER_ON:  Color32 = Color32::from_rgb(55, 115, 200);
 const CARD_BORDER_DEL: Color32 = Color32::from_rgb(180, 55, 55);
-const CARD_BG_DEL:  Color32 = Color32::from_rgb(44, 20, 20);
+const CARD_BG_DEL:     Color32 = Color32::from_rgb(44, 20, 20);
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 /// Returns (start_install, start_uninstall)
-pub fn show(ui: &mut Ui, state: &mut AppState) -> (bool, bool) {
+pub fn show(ui: &mut Ui, state: &mut AppState, t: &Translations) -> (bool, bool) {
     let mut start_install   = false;
     let mut start_uninstall = false;
 
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        tab_btn(ui, "⬇  Installer",    state.list_mode == ListMode::Install,
-            Color32::from_rgb(30, 85, 145), || state.list_mode = ListMode::Install);
+        tab_btn(ui, t.tab_install,   state.list_mode == ListMode::Install,
+            Color32::from_rgb(30, 85, 145),  || state.list_mode = ListMode::Install);
         ui.add_space(4.0);
-        tab_btn(ui, "🗑  Désinstaller", state.list_mode == ListMode::Uninstall,
-            Color32::from_rgb(125, 30, 30), || state.list_mode = ListMode::Uninstall);
+        tab_btn(ui, t.tab_uninstall, state.list_mode == ListMode::Uninstall,
+            Color32::from_rgb(125, 30, 30),  || state.list_mode = ListMode::Uninstall);
     });
     ui.add_space(8.0);
     ui.separator();
     ui.add_space(8.0);
 
     match state.list_mode {
-        ListMode::Install   => { start_install   = show_install_tab(ui, state); }
-        ListMode::Uninstall => { start_uninstall = show_uninstall_tab(ui, state); }
+        ListMode::Install   => { start_install   = show_install_tab(ui, state, t); }
+        ListMode::Uninstall => { start_uninstall = show_uninstall_tab(ui, state, t); }
     }
 
     (start_install, start_uninstall)
@@ -41,23 +43,37 @@ pub fn show(ui: &mut Ui, state: &mut AppState) -> (bool, bool) {
 
 // ── Install tab ───────────────────────────────────────────────────────────────
 
-fn show_install_tab(ui: &mut Ui, state: &mut AppState) -> bool {
+fn show_install_tab(ui: &mut Ui, state: &mut AppState, t: &Translations) -> bool {
     let mut start_install = false;
 
-    if !state.common_languages.is_empty()
-        && !state.common_languages.contains(&state.install_options.selected_language)
-    {
-        state.install_options.selected_language = state.common_languages[0].clone();
+    // Build the full language list: base languages always available + unique GitHub ones
+    let mut all_langs: Vec<String> = BASE_LANGUAGES
+        .iter()
+        .map(|(code, _, _)| code.to_string())
+        .collect();
+    for l in &state.common_languages {
+        if !all_langs.contains(l) {
+            all_langs.push(l.clone());
+        }
+    }
+
+    // If the current selection is not in the combined list, reset to first base language
+    if !all_langs.contains(&state.install_options.selected_language) {
+        state.install_options.selected_language = all_langs[0].clone();
+        eprintln!("[suite_install][program_list][INFO] langue réinitialisée -> {}", all_langs[0]);
     }
 
     // Quick-select toolbar
     ui.horizontal(|ui| {
-        small_btn(ui, "Tout activer",    || state.programs.iter_mut().for_each(|p| p.selected = true));
-        small_btn(ui, "Tout désactiver", || state.programs.iter_mut().for_each(|p| p.selected = false));
+        small_btn(ui, t.select_all,   || state.programs.iter_mut().for_each(|p| p.selected = true));
+        small_btn(ui, t.deselect_all, || state.programs.iter_mut().for_each(|p| p.selected = false));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let n = state.programs.iter().filter(|p| p.selected).count();
-            ui.label(RichText::new(format!("{}/{} sélectionné(s)", n, state.programs.len()))
-                .size(11.0).color(Color32::from_rgb(110, 110, 120)));
+            let n     = state.programs.iter().filter(|p| p.selected).count();
+            let total = state.programs.len();
+            let label = t.n_selected
+                .replace("{n}",     &n.to_string())
+                .replace("{total}", &total.to_string());
+            ui.label(RichText::new(label).size(11.0).color(Color32::from_rgb(110, 110, 120)));
         });
     });
     ui.add_space(6.0);
@@ -84,9 +100,9 @@ fn show_install_tab(ui: &mut Ui, state: &mut AppState) -> bool {
                 let action = program_card(
                     ui, &name, &desc,
                     inst_ver.as_deref(), avail_ver.as_deref(),
-                    &langs, installed, needs_upd, selected, false,
+                    &langs, installed, needs_upd, selected, false, t,
                 );
-                if action == CardAction::Toggle  { state.programs[idx].selected = !selected; }
+                if action == CardAction::Toggle { state.programs[idx].selected = !selected; }
                 ui.add_space(5.0);
             }
         });
@@ -97,68 +113,66 @@ fn show_install_tab(ui: &mut Ui, state: &mut AppState) -> bool {
 
     // Options row
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Langue").size(12.0).color(Color32::from_rgb(170, 170, 170)));
+        ui.label(RichText::new(t.language_label).size(12.0).color(Color32::from_rgb(170, 170, 170)));
         ui.add_space(4.0);
-        if state.common_languages.is_empty() {
-            ui.label(RichText::new("aucune langue disponible")
-                .size(12.0).color(Color32::from_rgb(200, 80, 80)));
-        } else {
-            let langs = state.common_languages.clone();
-            ComboBox::from_id_salt("language_select")
-                .selected_text(language_label(&state.install_options.selected_language))
-                .show_ui(ui, |ui| {
-                    for lang in &langs {
-                        ui.selectable_value(
-                            &mut state.install_options.selected_language,
-                            lang.clone(),
-                            language_label(lang),
-                        );
-                    }
-                });
-        }
+        ComboBox::from_id_salt("language_select")
+            .selected_text(language_label(&state.install_options.selected_language))
+            .show_ui(ui, |ui| {
+                for lang in &all_langs {
+                    ui.selectable_value(
+                        &mut state.install_options.selected_language,
+                        lang.clone(),
+                        language_label(lang),
+                    );
+                }
+            });
         ui.add_space(12.0);
         ui.separator();
         ui.add_space(8.0);
-        ui.label(RichText::new("Raccourcis").size(12.0).color(Color32::from_rgb(170, 170, 170)));
+        ui.label(RichText::new(t.shortcuts_label).size(12.0).color(Color32::from_rgb(170, 170, 170)));
         ui.add_space(6.0);
-        toggle_inline(ui, &mut state.install_options.desktop_shortcut,     "Bureau");
+        toggle_inline(ui, &mut state.install_options.desktop_shortcut,     t.desktop_label);
         ui.add_space(10.0);
-        toggle_inline(ui, &mut state.install_options.quicklaunch_shortcut, "Démarrer");
+        toggle_inline(ui, &mut state.install_options.quicklaunch_shortcut, t.start_menu_label);
     });
 
     ui.add_space(10.0);
 
     let selected = state.programs.iter().filter(|p| p.selected).count();
-    let can      = selected > 0 && !state.common_languages.is_empty();
-    let label    = if selected == 0             { "Aucun programme sélectionné".into() }
-                   else if state.common_languages.is_empty() { "Aucune langue disponible".into() }
-                   else                         { format!("Installer {} programme(s)", selected) };
+    let can      = selected > 0; // a language is always available (base languages compiled in)
+    let label = if selected == 0 {
+        t.no_program_selected.to_string()
+    } else {
+        t.install_n_programs.replace("{n}", &selected.to_string())
+    };
+    eprintln!("[suite_install][program_list][INFO] install: {selected} prog sélectionné(s), langue='{}', can={can}", state.install_options.selected_language);
 
-    action_btn(ui, &label, if can { Color32::from_rgb(30, 115, 30) } else { Color32::from_rgb(50, 50, 55) }, can,
-        || start_install = true);
+    action_btn(ui, &label,
+        if can { Color32::from_rgb(30, 115, 30) } else { Color32::from_rgb(50, 50, 55) },
+        can, || start_install = true);
 
     start_install
 }
 
 // ── Uninstall tab ─────────────────────────────────────────────────────────────
 
-fn show_uninstall_tab(ui: &mut Ui, state: &mut AppState) -> bool {
+fn show_uninstall_tab(ui: &mut Ui, state: &mut AppState, t: &Translations) -> bool {
     let mut start_uninstall = false;
 
     if !state.programs.iter().any(|p| p.installed_version.is_some()) {
         ui.add_space(50.0);
         ui.vertical_centered(|ui| {
-            ui.label(RichText::new("Aucun programme Rusty Suite n'est installé.")
+            ui.label(RichText::new(t.no_programs_installed)
                 .color(Color32::from_rgb(110, 110, 110)).size(14.0));
         });
         return false;
     }
 
     ui.horizontal(|ui| {
-        small_btn(ui, "Tout activer",    || {
+        small_btn(ui, t.select_all, || {
             state.programs.iter_mut().filter(|p| p.installed_version.is_some()).for_each(|p| p.selected = true);
         });
-        small_btn(ui, "Tout désactiver", || {
+        small_btn(ui, t.deselect_all, || {
             state.programs.iter_mut().filter(|p| p.installed_version.is_some()).for_each(|p| p.selected = false);
         });
     });
@@ -189,7 +203,7 @@ fn show_uninstall_tab(ui: &mut Ui, state: &mut AppState) -> bool {
                 let action = program_card(
                     ui, &name, &detail,
                     inst_ver.as_deref(), avail_ver.as_deref(),
-                    "", true, false, selected, true,
+                    "", true, false, selected, true, t,
                 );
                 if action == CardAction::Toggle { state.programs[idx].selected = !selected; }
                 ui.add_space(5.0);
@@ -199,15 +213,18 @@ fn show_uninstall_tab(ui: &mut Ui, state: &mut AppState) -> bool {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.label(RichText::new("⚠").color(Color32::from_rgb(220, 160, 60)));
-        ui.label(RichText::new("La désinstallation supprime définitivement les fichiers, données et raccourcis.")
+        ui.label(RichText::new(t.uninstall_warning)
             .size(11.0).color(Color32::from_rgb(175, 135, 55)));
     });
     ui.add_space(8.0);
 
     let selected = state.programs.iter()
         .filter(|p| p.selected && p.installed_version.is_some()).count();
-    let label = if selected == 0 { "Aucun programme sélectionné".into() }
-                else { format!("Désinstaller {} programme(s)", selected) };
+    let label = if selected == 0 {
+        t.no_program_selected.to_string()
+    } else {
+        t.uninstall_n_programs.replace("{n}", &selected.to_string())
+    };
 
     action_btn(ui, &label,
         if selected > 0 { Color32::from_rgb(140, 30, 30) } else { Color32::from_rgb(50, 50, 55) },
@@ -222,36 +239,34 @@ fn show_uninstall_tab(ui: &mut Ui, state: &mut AppState) -> bool {
 enum CardAction { None, Toggle }
 
 fn program_card(
-    ui:           &mut Ui,
-    name:         &str,
-    subtitle:     &str,
+    ui:            &mut Ui,
+    name:          &str,
+    subtitle:      &str,
     installed_ver: Option<&str>,
     available_ver: Option<&str>,
-    langs:        &str,
-    installed:    bool,
-    needs_update: bool,
-    selected:     bool,
-    danger:       bool,
+    langs:         &str,
+    installed:     bool,
+    needs_update:  bool,
+    selected:      bool,
+    danger:        bool,
+    t:             &Translations,
 ) -> CardAction {
-    let card_id    = Id::new("card").with(name);
-    let expand_id  = card_id.with("expand");
-    let hover_id   = card_id.with("hover");
+    let card_id   = Id::new("card").with(name);
+    let expand_id = card_id.with("expand");
+    let hover_id  = card_id.with("hover");
 
-    // Persistent expanded state
     let mut expanded: bool = ui.data(|d| d.get_temp(expand_id).unwrap_or(false));
 
-    // Hover animation  0.0 → 1.0
     let is_hovered = ui.data(|d| d.get_temp::<bool>(hover_id).unwrap_or(false));
     let hover_t = ui.ctx().animate_bool(hover_id, is_hovered);
 
-    // Interpolate background
     let bg_base = if danger && selected { CARD_BG_DEL }
                   else if selected      { CARD_BG_ON  }
                   else                  { CARD_BG_OFF };
     let bg = lerp_color(bg_base, brighten(bg_base, 18), hover_t);
-    let border = if danger && selected  { CARD_BORDER_DEL }
-                 else if selected       { CARD_BORDER_ON  }
-                 else                   { lerp_color(CARD_BORDER_OFF, Color32::from_rgb(80, 80, 100), hover_t) };
+    let border = if danger && selected { CARD_BORDER_DEL }
+                 else if selected      { CARD_BORDER_ON  }
+                 else { lerp_color(CARD_BORDER_OFF, Color32::from_rgb(80, 80, 100), hover_t) };
 
     let mut action = CardAction::None;
 
@@ -263,9 +278,7 @@ fn program_card(
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
 
-            // ── Header row (always visible) ───────────────────────────────────
             ui.horizontal(|ui| {
-                // Left: name + badges
                 ui.vertical(|ui| {
                     ui.set_min_width(ui.available_width() - 56.0);
                     ui.horizontal_wrapped(|ui| {
@@ -276,9 +289,9 @@ fn program_card(
                         ui.add_space(5.0);
                         if installed && !danger {
                             if needs_update {
-                                badge(ui, "MÀJ",        Color32::from_rgb(220, 160, 55), Color32::from_rgb(55, 40, 8));
+                                badge(ui, t.badge_update,    Color32::from_rgb(220, 160, 55), Color32::from_rgb(55, 40, 8));
                             } else {
-                                badge(ui, "✓ installé", Color32::from_rgb(70, 200, 70),  Color32::from_rgb(10, 40, 10));
+                                badge(ui, t.badge_installed, Color32::from_rgb(70, 200, 70),  Color32::from_rgb(10, 40, 10));
                             }
                         }
                         if let Some(iv) = installed_ver {
@@ -299,20 +312,17 @@ fn program_card(
                                 badge(ui, &format!("v{iv}"), Color32::from_rgb(200, 95, 95), Color32::from_rgb(48, 14, 14));
                             }
                         }
-                        // Expand chevron
                         let chevron = if expanded { "▲" } else { "▼" };
                         ui.label(RichText::new(chevron).size(10.0).color(Color32::from_rgb(90, 90, 110)));
                     });
                 });
 
-                // Right: pill toggle
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(2.0);
                     if draw_pill(ui, selected, danger) { action = CardAction::Toggle; }
                 });
             });
 
-            // ── Expanded details ──────────────────────────────────────────────
             if expanded {
                 ui.add_space(6.0);
                 ui.separator();
@@ -331,7 +341,6 @@ fn program_card(
             }
         });
 
-    // Detect hover over the whole card
     let rect = frame_resp.response.rect;
     let body_resp = ui.interact(rect, card_id.with("body"), Sense::click());
     let now_hovered = body_resp.hovered();
@@ -342,7 +351,6 @@ fn program_card(
         ui.data_mut(|d| d.insert_temp(expand_id, expanded));
     }
 
-    // Request repaint while animation is running
     if hover_t > 0.01 && hover_t < 0.99 {
         ui.ctx().request_repaint();
     }
@@ -352,7 +360,6 @@ fn program_card(
 
 // ── Pill toggle ───────────────────────────────────────────────────────────────
 
-/// Returns true if clicked.
 fn draw_pill(ui: &mut Ui, on: bool, danger: bool) -> bool {
     let size = Vec2::new(38.0, 20.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
@@ -371,8 +378,8 @@ fn draw_pill(ui: &mut Ui, on: bool, danger: bool) -> bool {
         let r = rect.height() / 2.0;
         ui.painter().rect_filled(rect, Rounding::same(r), track);
 
-        let knob_r  = r - 2.5;
-        let knob_x  = rect.left() + r + t * (rect.width() - r * 2.0);
+        let knob_r = r - 2.5;
+        let knob_x = rect.left() + r + t * (rect.width() - r * 2.0);
         ui.painter().circle_filled(egui::pos2(knob_x, rect.center().y), knob_r, Color32::WHITE);
     }
 

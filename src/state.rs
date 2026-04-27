@@ -4,6 +4,7 @@ use crate::github::{GithubRelease, GithubRepo};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Screen {
     Loading,
+    LanguageSelect,
     Eula,
     ProgramList,
     Installing,
