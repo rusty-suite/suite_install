@@ -187,15 +187,55 @@ fn load_anim_frames(ctx: &egui::Context) -> Vec<AnimFrame> {
         Err(e) => { eprintln!("[anim] frames: {e}"); return Vec::new(); }
     };
 
+    if raw_frames.is_empty() { return Vec::new(); }
+
+    // Canvas dimensions from the first frame.
+    let canvas_w = raw_frames[0].buffer().width();
+    let canvas_h = raw_frames[0].buffer().height();
+
+    // Pre-composite delta-encoded WebP frames onto a persistent canvas so each
+    // AnimFrame texture always contains the full, correct image for that moment.
+    let mut canvas = image::RgbaImage::new(canvas_w, canvas_h);
+
     raw_frames.into_iter().enumerate().map(|(i, frame)| {
         let (num, den) = frame.delay().numer_denom_ms();
         let delay_s = if num == 0 || den == 0 { 0.08 }
                       else { (num as f64 / den as f64 / 1000.0).max(0.016) };
 
+        // Frame offset within the canvas (WebP supports partial-frame updates).
+        let left = frame.left();
+        let top  = frame.top();
         let buf  = frame.into_buffer();
-        let size = [buf.width() as usize, buf.height() as usize];
-        let img  = egui::ColorImage::from_rgba_unmultiplied(size, buf.as_raw());
 
+        for (fx, fy, src) in buf.enumerate_pixels() {
+            let cx = left + fx;
+            let cy = top  + fy;
+            if cx >= canvas_w || cy >= canvas_h { continue; }
+            let sa = src[3];
+            if sa == 0 { continue; } // transparent pixel — keep canvas
+            if sa == 255 {
+                canvas.put_pixel(cx, cy, *src);
+            } else {
+                // src-over alpha compositing for semi-transparent pixels
+                let dst   = canvas.get_pixel(cx, cy);
+                let sa_f  = sa as f32 / 255.0;
+                let da_f  = dst[3] as f32 / 255.0;
+                let out_a = sa_f + da_f * (1.0 - sa_f);
+                let blend = |s: u8, d: u8| -> u8 {
+                    if out_a < 0.001 { return 0; }
+                    ((s as f32 * sa_f + d as f32 * da_f * (1.0 - sa_f)) / out_a) as u8
+                };
+                canvas.put_pixel(cx, cy, image::Rgba([
+                    blend(src[0], dst[0]),
+                    blend(src[1], dst[1]),
+                    blend(src[2], dst[2]),
+                    (out_a * 255.0).min(255.0) as u8,
+                ]));
+            }
+        }
+
+        let size = [canvas_w as usize, canvas_h as usize];
+        let img  = egui::ColorImage::from_rgba_unmultiplied(size, canvas.as_raw());
         let handle = ctx.load_texture(format!("anim_{i}"), img, egui::TextureOptions::LINEAR);
         AnimFrame { handle, delay_s }
     }).collect()

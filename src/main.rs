@@ -170,7 +170,7 @@ impl InstallerApp {
         }
     }
 
-    fn start_installation(&mut self) {
+    fn start_installation(&mut self, ctx: egui::Context) {
         logger::write("main", "INFO", "=== Démarrage de l'installation ===");
         logger::write("main", "INFO", &format!(
             "langue='{}' bureau={} démarrer={}",
@@ -213,10 +213,10 @@ impl InstallerApp {
             &format!("{} programme(s) à installer — thread lancé", to_install.len()));
         let log_clone = Arc::clone(&self.log);
         let lang = self.state.install_options.selected_language.clone();
-        runner::install_programs(to_install, self.state.install_options.clone(), log_clone, lang);
+        runner::install_programs(to_install, self.state.install_options.clone(), log_clone, lang, ctx);
     }
 
-    fn start_uninstallation(&mut self) {
+    fn start_uninstallation(&mut self, ctx: egui::Context) {
         self.state.screen = Screen::Installing;
         self.state.is_uninstall = true;
 
@@ -242,7 +242,7 @@ impl InstallerApp {
 
         let log_clone = Arc::clone(&self.log);
         let lang = self.state.install_options.selected_language.clone();
-        runner::uninstall_programs(to_uninstall, log_clone, lang);
+        runner::uninstall_programs(to_uninstall, log_clone, lang, ctx);
     }
 }
 
@@ -281,9 +281,9 @@ impl eframe::App for InstallerApp {
                 let (do_install, do_uninstall) =
                     screens::program_list::show(ui, &mut self.state, t);
                 if do_install {
-                    self.start_installation();
+                    self.start_installation(ui.ctx().clone());
                 } else if do_uninstall {
-                    self.start_uninstallation();
+                    self.start_uninstallation(ui.ctx().clone());
                 }
             }
             Screen::Installing => {

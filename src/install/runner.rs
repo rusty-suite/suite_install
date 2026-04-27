@@ -1,6 +1,7 @@
 use crate::github::{self, GithubRelease, ReleaseAsset};
 use crate::install::{certificates, paths, shortcuts};
 use crate::state::{InstallLogEntry, InstallOptions, InstallStatus};
+use egui::Context;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
@@ -44,6 +45,7 @@ pub fn install_programs(
     options: InstallOptions,
     log_out: Log,
     lang: String,
+    ctx: Context,
 ) {
     std::thread::spawn(move || {
         let t = crate::i18n::get(&lang);
@@ -51,13 +53,14 @@ pub fn install_programs(
             "=== Installation démarrée — {} programme(s) — langue: {lang} ===", programs.len()
         ));
 
-        run_precheck(&programs, &log_out, t);
+        run_precheck(&programs, &log_out, t, &ctx);
 
         for (name, release, branch, language, lang_folder) in programs {
             // ── Start ─────────────────────────────────────────────────────────
             action(&log_out, &name,
                 t.log_starting_install.replace("{branch}", &branch));
             set_status(&log_out, &name, InstallStatus::Downloading(name.clone()));
+            ctx.request_repaint();
 
             // ── 1. Prepare directories ────────────────────────────────────────
             let install_dir = paths::program_files_dir(&name);
@@ -106,6 +109,7 @@ pub fn install_programs(
                 Err(e) => {
                     crate::logger::write("runner", "ERROR", &format!("{name}: {e}"));
                     set_status(&log_out, &name, InstallStatus::Error(e));
+                    ctx.request_repaint();
                     continue;
                 }
             };
@@ -153,9 +157,11 @@ pub fn install_programs(
 
             set_status(&log_out, &name, InstallStatus::Done(name.clone()));
             action(&log_out, &name, t.log_install_done);
+            ctx.request_repaint();
         }
 
         crate::logger::write("runner", "INFO", "=== Installation terminée ===");
+        ctx.request_repaint();
     });
 }
 
@@ -294,7 +300,7 @@ fn pick_windows_asset(assets: &[ReleaseAsset]) -> Option<&ReleaseAsset> {
 
 // ── Pre-check phase ───────────────────────────────────────────────────────────
 
-fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Translations) {
+fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Translations, ctx: &Context) {
     let key = t.precheck_title;
 
     {
@@ -305,9 +311,11 @@ fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Transla
             actions: Vec::new(),
         });
     }
+    ctx.request_repaint();
 
     // 1. Connectivity
     action(log, key, t.precheck_checking_conn);
+    ctx.request_repaint();
     let conn_ms = match crate::github::check_connectivity() {
         Ok(ms) => {
             action(log, key, t.precheck_conn_ok.replace("{ms}", &ms.to_string()));
@@ -320,6 +328,7 @@ fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Transla
             None
         }
     };
+    ctx.request_repaint();
 
     // 2. Total download size from selected assets
     let total_bytes: u64 = programs.iter()
@@ -332,11 +341,13 @@ fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Transla
         let msg = t.precheck_total_size.replace("{size}", &human_size(total_bytes));
         action(log, key, &msg);
         crate::logger::write("runner", "INFO", &msg);
+        ctx.request_repaint();
     }
 
     // 3. Speed test + ETA (only if connectivity confirmed)
     if conn_ms.is_some() {
         action(log, key, t.precheck_speed_test);
+        ctx.request_repaint();
         match estimate_speed_bps() {
             Ok(bps) if bps > 0 => {
                 let msg = t.precheck_speed.replace("{speed}", &human_speed(bps));
@@ -352,10 +363,12 @@ fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Transla
             }
             _ => {}
         }
+        ctx.request_repaint();
     }
 
     set_status(log, key, crate::state::InstallStatus::Done(t.precheck_done.to_string()));
     crate::logger::write("runner", "INFO", "Pré-vérification terminée");
+    ctx.request_repaint();
 }
 
 fn estimate_speed_bps() -> Result<u64, String> {
@@ -471,7 +484,7 @@ fn copy_lang_file(
 
 // ── Uninstall ─────────────────────────────────────────────────────────────────
 
-pub fn uninstall_programs(names: Vec<String>, log_out: Log, lang: String) {
+pub fn uninstall_programs(names: Vec<String>, log_out: Log, lang: String, ctx: Context) {
     std::thread::spawn(move || {
         let t = crate::i18n::get(&lang);
         crate::logger::write("runner", "INFO", &format!(
@@ -483,6 +496,7 @@ pub fn uninstall_programs(names: Vec<String>, log_out: Log, lang: String) {
                 t.log_starting_uninstall.replace("{name}", &name));
             set_status(&log_out, &name,
                 InstallStatus::Installing(format!("Désinstallation {name}")));
+            ctx.request_repaint();
 
             let install_dir = paths::program_files_dir(&name);
             let appdata_dir = paths::appdata_dir(&name);
@@ -537,10 +551,12 @@ pub fn uninstall_programs(names: Vec<String>, log_out: Log, lang: String) {
 
             set_status(&log_out, &name, InstallStatus::Done(name.clone()));
             action(&log_out, &name, t.log_uninstall_done);
+            ctx.request_repaint();
         }
 
         cleanup_empty_roots();
         crate::logger::write("runner", "INFO", "=== Désinstallation terminée ===");
+        ctx.request_repaint();
     });
 }
 
