@@ -1,6 +1,7 @@
-use crate::github::{self, GithubRelease};
+use crate::github::{self, GithubRelease, ReleaseAsset};
 use crate::install::{certificates, paths, shortcuts};
 use crate::state::{InstallLogEntry, InstallOptions, InstallStatus};
+use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
 pub type Log = Arc<Mutex<Vec<InstallLogEntry>>>;
@@ -191,86 +192,129 @@ fn download_binary(
 ) -> Result<std::path::PathBuf, String> {
     let release = release.ok_or_else(|| format!("{name}: aucune release disponible"))?;
 
-    // Find a Windows x64 asset
-    let asset = release
-        .assets
-        .iter()
-        .find(|a| {
-            let n = a.name.to_lowercase();
-            n.contains("windows") || n.ends_with(".exe") || n.ends_with(".zip")
-        })
+    // Prefer windows-x64, then any .exe/.zip
+    let asset = pick_windows_asset(&release.assets)
         .ok_or_else(|| format!("{name}: pas d'asset Windows trouvé dans la release"))?;
+
+    // Look for a companion .sha256 asset
+    let sha256_asset = release.assets.iter().find(|a| {
+        a.name == format!("{}.sha256", asset.name)
+            || a.name == format!("{}.sha256sum", asset.name)
+    });
+
     eprintln!(
-        "[suite_install][install][INFO] {name}: asset selectionne '{}' ({}, {})",
+        "[suite_install][install][INFO] {name}: asset='{}' size={} sha256={}",
         asset.name,
         human_size(asset.size),
-        asset.browser_download_url
+        sha256_asset.map(|a| a.name.as_str()).unwrap_or("absent")
     );
-    action(
-        log,
-        name,
-        format!(
-            "Asset sélectionné: {} ({})",
-            asset.name,
-            human_size(asset.size)
-        ),
-    );
+    action(log, name, format!("Asset: {} ({})", asset.name, human_size(asset.size)));
 
-    let tmp_path = paths::temp_dir(name).join(&asset.name);
-    std::fs::create_dir_all(tmp_path.parent().unwrap())
-        .map_err(|e| format!("{name}: tmp dir: {e}"))?;
+    let tmp_dir = paths::temp_dir(name);
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("{name}: tmp dir: {e}"))?;
+    let tmp_path = tmp_dir.join(&asset.name);
 
     {
         let mut l = log.lock().unwrap();
-        if let Some(entry) = l.iter_mut().find(|entry| entry.app == name) {
-            entry.status =
-                InstallStatus::Downloading(format!("{} ({})", name, human_size(asset.size)));
+        if let Some(entry) = l.iter_mut().find(|e| e.app == name) {
+            entry.status = InstallStatus::Downloading(
+                format!("{} ({})", name, human_size(asset.size))
+            );
         }
     }
 
     let client = reqwest::blocking::Client::builder()
         .user_agent("suite_install/0.1")
+        .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| e.to_string())?;
-    let response = client
-        .get(&asset.browser_download_url)
-        .send()
-        .map_err(|e| format!("{name}: download send: {e}"))?;
-    let status = response.status();
-    eprintln!(
-        "[suite_install][install][INFO] {name}: telechargement '{}' -> {status}",
-        asset.browser_download_url
-    );
-    if !status.is_success() {
-        return Err(format!("{name}: download HTTP {status}"));
-    }
-    action(log, name, format!("Téléchargement HTTP terminé: {status}"));
-    let bytes = response
-        .bytes()
-        .map_err(|e| format!("{name}: download body: {e}"))?;
-    std::fs::write(&tmp_path, &bytes).map_err(|e| format!("{name}: write tmp: {e}"))?;
-    eprintln!(
-        "[suite_install][install][INFO] {name}: {} octet(s) ecrits dans '{}'",
-        bytes.len(),
-        tmp_path.display()
-    );
 
-    // Extract zip or copy exe
+    // Download main binary
+    let bytes = fetch_bytes(&client, &asset.browser_download_url, name)?;
+
+    // Verify size
+    let expected_size = asset.size;
+    let actual_size = bytes.len() as u64;
+    eprintln!("[suite_install][install][INFO] {name}: taille attendue={expected_size} recue={actual_size}");
+    if expected_size > 0 && actual_size != expected_size {
+        return Err(format!(
+            "{name}: taille incorrecte (attendu {expected_size} o, recu {actual_size} o) — téléchargement corrompu"
+        ));
+    }
+    action(log, name, format!("Taille vérifiée: {}", human_size(actual_size)));
+
+    // Verify SHA-256 if a checksum file exists
+    if let Some(sha_asset) = sha256_asset {
+        action(log, name, "Vérification SHA-256…");
+        let sha_bytes = fetch_bytes(&client, &sha_asset.browser_download_url, name)?;
+        let expected_hex = String::from_utf8_lossy(&sha_bytes)
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_lowercase();
+
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        let actual_hex = hex::encode(hasher.finalize());
+
+        eprintln!("[suite_install][install][INFO] {name}: SHA-256 attendu={expected_hex} calcule={actual_hex}");
+        if !expected_hex.is_empty() && actual_hex != expected_hex {
+            return Err(format!(
+                "{name}: SHA-256 invalide — fichier corrompu ou falsifié\n  attendu : {expected_hex}\n  calculé : {actual_hex}"
+            ));
+        }
+        action(log, name, "SHA-256 validé ✓");
+    } else {
+        action(log, name, "Aucun fichier .sha256 fourni — vérification de taille uniquement");
+    }
+
+    // Write to tmp
+    std::fs::write(&tmp_path, &bytes).map_err(|e| format!("{name}: écriture tmp: {e}"))?;
+
+    // Extract or copy
     let exe_path = if asset.name.ends_with(".zip") {
         action(log, name, "Extraction de l'archive ZIP");
         extract_zip(&tmp_path, install_dir, name).map_err(|e| format!("{name}: zip: {e}"))?
     } else {
         let dest = install_dir.join(&asset.name);
-        action(
-            log,
-            name,
-            format!("Copie de l'exécutable vers {}", dest.display()),
-        );
-        std::fs::copy(&tmp_path, &dest).map_err(|e| format!("{name}: copy: {e}"))?;
+        action(log, name, format!("Copie vers {}", dest.display()));
+        std::fs::copy(&tmp_path, &dest).map_err(|e| format!("{name}: copie: {e}"))?;
         dest
     };
 
     Ok(exe_path)
+}
+
+fn pick_windows_asset(assets: &[ReleaseAsset]) -> Option<&ReleaseAsset> {
+    // Priority: explicit windows-x64/amd64, then any .exe or .zip (skip checksums)
+    let is_checksum = |n: &str| n.ends_with(".sha256") || n.ends_with(".sha256sum") || n.ends_with(".md5");
+    assets.iter()
+        .filter(|a| !is_checksum(&a.name))
+        .max_by_key(|a| {
+            let n = a.name.to_lowercase();
+            let score =
+                (if n.contains("x86_64") || n.contains("x64") || n.contains("amd64") { 4 } else { 0 })
+              + (if n.contains("windows") || n.contains("win") { 2 } else { 0 })
+              + (if n.ends_with(".exe") || n.ends_with(".zip") { 1 } else { 0 });
+            score
+        })
+        .filter(|a| {
+            let n = a.name.to_lowercase();
+            n.ends_with(".exe") || n.ends_with(".zip") || n.contains("windows") || n.contains("win")
+        })
+}
+
+fn fetch_bytes(client: &reqwest::blocking::Client, url: &str, name: &str) -> Result<Vec<u8>, String> {
+    let resp = client.get(url).send()
+        .map_err(|e| format!("{name}: connexion impossible ({url}): {e}"))?;
+    let status = resp.status();
+    eprintln!("[suite_install][install][INFO] {name}: GET {url} -> {status}");
+    if !status.is_success() {
+        return Err(format!("{name}: HTTP {status} pour {url}"));
+    }
+    resp.bytes()
+        .map(|b| b.to_vec())
+        .map_err(|e| format!("{name}: lecture corps ({url}): {e}"))
 }
 
 fn extract_zip(

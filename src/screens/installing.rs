@@ -1,17 +1,18 @@
 use crate::state::{InstallLogEntry, InstallStatus};
-use egui::{Color32, RichText, ScrollArea, Ui};
+use egui::{Color32, RichText, ScrollArea, TextureHandle, Ui};
 use image::AnimationDecoder;
 use std::io::{BufReader, Cursor};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 const INSTALL_IMAGE: &[u8] = include_bytes!("../../assets/img/Rusty_suite_install_1.webp");
 
-struct InstallImageFrame {
-    image: egui::ColorImage,
-    delay_seconds: f64,
+struct AnimFrame {
+    handle: TextureHandle,
+    delay_s: f64,
 }
 
-static INSTALL_FRAMES: OnceLock<Vec<InstallImageFrame>> = OnceLock::new();
+/// Cached GPU texture handles — initialised once on first render.
+static ANIM_FRAMES: OnceLock<Mutex<Vec<AnimFrame>>> = OnceLock::new();
 
 pub fn show(ui: &mut Ui, log: &[InstallLogEntry], all_done: bool, is_uninstall: bool) -> bool {
     let mut close = false;
@@ -144,78 +145,58 @@ pub fn show(ui: &mut Ui, log: &[InstallLogEntry], all_done: bool, is_uninstall: 
 }
 
 fn show_install_image(ui: &mut Ui) {
-    let frames = INSTALL_FRAMES.get_or_init(decode_install_frames);
+    // Initialise GPU handles once — decode + upload happen here on first call only.
+    let mutex = ANIM_FRAMES.get_or_init(|| Mutex::new(load_anim_frames(ui.ctx())));
+    let frames = mutex.lock().unwrap();
+
     if frames.is_empty() {
         return;
     }
-    ui.ctx()
-        .request_repaint_after(std::time::Duration::from_millis(40));
 
-    let total_duration: f64 = frames.iter().map(|frame| frame.delay_seconds).sum();
-    let time = ui.ctx().input(|input| input.time);
-    let mut elapsed = if total_duration > 0.0 {
-        time % total_duration
-    } else {
-        0.0
-    };
+    let total_s: f64 = frames.iter().map(|f| f.delay_s).sum();
+    let time = ui.ctx().input(|i| i.time);
+    let mut t = if total_s > 0.0 { time % total_s } else { 0.0 };
 
-    let mut frame_index = 0;
-    for (index, frame) in frames.iter().enumerate() {
-        if elapsed <= frame.delay_seconds {
-            frame_index = index;
-            break;
-        }
-        elapsed -= frame.delay_seconds;
+    let mut idx = frames.len() - 1;
+    for (i, f) in frames.iter().enumerate() {
+        if t < f.delay_s { idx = i; break; }
+        t -= f.delay_s;
     }
 
-    let frame = &frames[frame_index];
-    let texture = ui.ctx().load_texture(
-        format!("rusty_suite_install_frame_{frame_index}"),
-        frame.image.clone(),
-        egui::TextureOptions::LINEAR,
+    let next_frame_in = frames[idx].delay_s - t;
+    ui.ctx().request_repaint_after(
+        std::time::Duration::from_secs_f64(next_frame_in.max(0.016))
     );
 
     ui.add(
-        egui::Image::from_texture(&texture)
+        egui::Image::from_texture(&frames[idx].handle)
             .max_height(150.0)
             .fit_to_original_size(1.0),
     );
 }
 
-fn decode_install_frames() -> Vec<InstallImageFrame> {
+fn load_anim_frames(ctx: &egui::Context) -> Vec<AnimFrame> {
     let cursor = Cursor::new(INSTALL_IMAGE);
-    let reader = BufReader::new(cursor);
-    let decoder = match image::codecs::webp::WebPDecoder::new(reader) {
-        Ok(decoder) => decoder,
-        Err(err) => {
-            eprintln!("[suite_install][install_ui][ERROR] WebP decode impossible: {err}");
-            return Vec::new();
-        }
+    let decoder = match image::codecs::webp::WebPDecoder::new(BufReader::new(cursor)) {
+        Ok(d) => d,
+        Err(e) => { eprintln!("[anim] WebP decode: {e}"); return Vec::new(); }
+    };
+    let raw_frames = match decoder.into_frames().collect_frames() {
+        Ok(f) => f,
+        Err(e) => { eprintln!("[anim] frames: {e}"); return Vec::new(); }
     };
 
-    match decoder.into_frames().collect_frames() {
-        Ok(frames) => frames.into_iter().map(frame_to_install_image).collect(),
-        Err(err) => {
-            eprintln!("[suite_install][install_ui][ERROR] Frames WebP impossibles: {err}");
-            Vec::new()
-        }
-    }
-}
+    raw_frames.into_iter().enumerate().map(|(i, frame)| {
+        let (num, den) = frame.delay().numer_denom_ms();
+        let delay_s = if num == 0 || den == 0 { 0.08 }
+                      else { (num as f64 / den as f64 / 1000.0).max(0.016) };
 
-fn frame_to_install_image(frame: image::Frame) -> InstallImageFrame {
-    let (numerator, denominator) = frame.delay().numer_denom_ms();
-    let delay_seconds = if numerator == 0 || denominator == 0 {
-        0.08
-    } else {
-        (numerator as f64 / denominator as f64 / 1000.0).max(0.02)
-    };
+        let buf  = frame.into_buffer();
+        let size = [buf.width() as usize, buf.height() as usize];
+        let img  = egui::ColorImage::from_rgba_unmultiplied(size, buf.as_raw());
 
-    let buffer = frame.into_buffer();
-    let size = [buffer.width() as usize, buffer.height() as usize];
-    let image = egui::ColorImage::from_rgba_unmultiplied(size, buffer.as_raw());
-
-    InstallImageFrame {
-        image,
-        delay_seconds,
-    }
+        // Upload to GPU immediately — no clone needed at render time.
+        let handle = ctx.load_texture(format!("anim_{i}"), img, egui::TextureOptions::LINEAR);
+        AnimFrame { handle, delay_s }
+    }).collect()
 }

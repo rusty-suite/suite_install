@@ -1,11 +1,16 @@
 use std::path::PathBuf;
 
+/// Per-user install dir — no admin rights needed.
+/// %LOCALAPPDATA%\Programs\rusty-suite\<app>\
 pub fn program_files_dir(app_name: &str) -> PathBuf {
-    let base = std::env::var("PROGRAMFILES")
-        .unwrap_or_else(|_| "C:\\Program Files".to_string());
-    PathBuf::from(base).join("rusty-suite").join(app_name)
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("C:\\Users\\Default\\AppData\\Local"))
+        .join("Programs")
+        .join("rusty-suite")
+        .join(app_name)
 }
 
+/// %APPDATA%\rusty-suite\<app>\
 pub fn appdata_dir(app_name: &str) -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("C:\\Users\\Default\\AppData\\Roaming"))
@@ -13,6 +18,7 @@ pub fn appdata_dir(app_name: &str) -> PathBuf {
         .join(app_name)
 }
 
+/// %APPDATA%\rusty-suite\.tmp\<app>\
 pub fn temp_dir(app_name: &str) -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("C:\\Users\\Default\\AppData\\Roaming"))
