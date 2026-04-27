@@ -49,19 +49,36 @@ et accepté l'intégralité des présentes conditions.
 pub fn show(ui: &mut Ui, accepted: &mut bool) -> bool {
     let mut proceed = false;
 
+    let dark_mode = ui.visuals().dark_mode;
+    let text_primary = if dark_mode {
+        Color32::from_rgb(230, 230, 230)
+    } else {
+        Color32::from_rgb(20, 20, 20)
+    };
+    let text_secondary = if dark_mode {
+        Color32::from_rgb(180, 180, 180)
+    } else {
+        Color32::from_rgb(80, 80, 80)
+    };
+    let btn_disabled_fill = if dark_mode {
+        Color32::from_rgb(60, 60, 60)
+    } else {
+        Color32::from_rgb(180, 180, 180)
+    };
+
     ui.vertical_centered(|ui| {
         ui.add_space(8.0);
         ui.label(
             RichText::new("Rusty Suite — Installeur")
                 .size(22.0)
                 .strong()
-                .color(Color32::WHITE),
+                .color(text_primary),
         );
         ui.add_space(4.0);
         ui.label(
             RichText::new("Contrat de Licence Utilisateur Final")
                 .size(14.0)
-                .color(Color32::from_rgb(180, 180, 180)),
+                .color(text_secondary),
         );
         ui.add_space(12.0);
     });
@@ -86,7 +103,7 @@ pub fn show(ui: &mut Ui, accepted: &mut bool) -> bool {
         ui.checkbox(accepted, "");
         ui.label(
             RichText::new("J'ai lu et j'accepte les termes du contrat de licence")
-                .color(Color32::WHITE),
+                .color(text_primary),
         );
     });
 
@@ -100,7 +117,7 @@ pub fn show(ui: &mut Ui, accepted: &mut bool) -> bool {
         .fill(if *accepted {
             Color32::from_rgb(40, 140, 40)
         } else {
-            Color32::from_rgb(60, 60, 60)
+            btn_disabled_fill
         });
 
         if ui.add_enabled(*accepted, btn).clicked() {
