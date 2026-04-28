@@ -76,6 +76,9 @@ pub fn show(
     );
     ui.add_space(8.0);
 
+    show_summary(ui, log, is_uninstall, t);
+    ui.add_space(4.0);
+
     egui::CollapsingHeader::new(t.active_actions_header)
         .default_open(!all_done)
         .show(ui, |ui| {
@@ -159,6 +162,84 @@ pub fn show(
     }
 
     close
+}
+
+fn show_summary(ui: &mut Ui, log: &[InstallLogEntry], is_uninstall: bool, t: &Translations) {
+    let finished: Vec<&InstallLogEntry> = log
+        .iter()
+        .filter(|e| matches!(e.status, InstallStatus::Done(_) | InstallStatus::Error(_)))
+        .collect();
+
+    if finished.is_empty() {
+        return;
+    }
+
+    let ok_count  = finished.iter().filter(|e| matches!(e.status, InstallStatus::Done(_))).count();
+    let err_count = finished.iter().filter(|e| matches!(e.status, InstallStatus::Error(_))).count();
+
+    let header_label = format!(
+        "{}  ✓ {}  {}",
+        t.summary_header,
+        ok_count,
+        if err_count > 0 { format!("✗ {err_count}") } else { String::new() },
+    );
+
+    egui::CollapsingHeader::new(
+        egui::RichText::new(header_label)
+            .color(if err_count > 0 { Color32::from_rgb(220, 160, 60) } else { Color32::from_rgb(80, 210, 80) })
+    )
+    .default_open(true)
+    .show(ui, |ui| {
+        let total_bytes: u64 = log.iter().map(|e| e.bytes_done).sum();
+
+        for entry in &finished {
+            ui.horizontal(|ui| {
+                let (icon, color) = match &entry.status {
+                    InstallStatus::Done(_)  => ("✓", Color32::from_rgb(80, 210, 80)),
+                    InstallStatus::Error(_) => ("✗", Color32::from_rgb(220, 80,  80)),
+                    _                       => ("·", Color32::GRAY),
+                };
+                ui.label(RichText::new(icon).color(color).monospace());
+                ui.label(RichText::new(&entry.app).strong().color(color));
+
+                match &entry.status {
+                    InstallStatus::Done(_) => {
+                        if !is_uninstall && entry.bytes_done > 0 {
+                            ui.label(
+                                RichText::new(format!("— {}", human_size(entry.bytes_done)))
+                                    .size(11.0)
+                                    .color(Color32::from_rgb(100, 100, 120)),
+                            );
+                        }
+                    }
+                    InstallStatus::Error(msg) => {
+                        ui.label(
+                            RichText::new(format!("— {msg}"))
+                                .size(11.0)
+                                .color(Color32::from_rgb(200, 100, 100)),
+                        );
+                    }
+                    _ => {}
+                }
+            });
+        }
+
+        if !is_uninstall && total_bytes > 0 {
+            ui.add_space(4.0);
+            ui.separator();
+            ui.label(
+                RichText::new(format!("Total : {}", human_size(total_bytes)))
+                    .size(11.0)
+                    .color(Color32::from_rgb(100, 100, 120)),
+            );
+        }
+    });
+}
+
+fn human_size(bytes: u64) -> String {
+    if bytes < 1024 { format!("{bytes} B") }
+    else if bytes < 1024 * 1024 { format!("{:.1} KB", bytes as f64 / 1024.0) }
+    else { format!("{:.1} MB", bytes as f64 / 1024.0 / 1024.0) }
 }
 
 fn show_install_image(ui: &mut Ui) {
