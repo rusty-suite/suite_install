@@ -3,15 +3,35 @@ use crate::install::{certificates, paths, shortcuts};
 use crate::state::{InstallLogEntry, InstallOptions, InstallStatus};
 use egui::Context;
 use sha2::{Digest, Sha256};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 pub type Log = Arc<Mutex<Vec<InstallLogEntry>>>;
 type ProgramInstall = (String, Option<GithubRelease>, String, String, String);
 // (name, release, branch, language_file, lang_folder)
 
+// ── Repaint pump ──────────────────────────────────────────────────────────────
+
+/// Spawns a background thread that calls `ctx.request_repaint()` every 50 ms.
+/// Returns a flag: set it to `false` to stop the pump.
+fn start_repaint_pump(ctx: &Context) -> Arc<AtomicBool> {
+    let running = Arc::new(AtomicBool::new(true));
+    let running2 = Arc::clone(&running);
+    let ctx = ctx.clone();
+    std::thread::spawn(move || {
+        while running2.load(Ordering::Relaxed) {
+            ctx.request_repaint();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        ctx.request_repaint(); // final repaint when pump stops
+    });
+    running
+}
+
 // ── Log helpers ───────────────────────────────────────────────────────────────
 
-/// Update the status of a program entry in the shared log and write to file.
 fn set_status(log: &Log, app: &str, status: InstallStatus) {
     crate::logger::write("runner", "STATUS", &format!("{app}: {status:?}"));
     let mut l = log.lock().unwrap();
@@ -22,7 +42,6 @@ fn set_status(log: &Log, app: &str, status: InstallStatus) {
     }
 }
 
-/// Append an action message to a program entry and write to file.
 fn action(log: &Log, app: &str, message: impl Into<String>) {
     let message = message.into();
     crate::logger::write("runner", "ACTION", &format!("{app}: {message}"));
@@ -38,7 +57,7 @@ fn action(log: &Log, app: &str, message: impl Into<String>) {
     }
 }
 
-// ── Install ───────────────────────────────────────────────────────────────────
+// ── Public API ────────────────────────────────────────────────────────────────
 
 pub fn install_programs(
     programs: Vec<ProgramInstall>,
@@ -50,119 +69,304 @@ pub fn install_programs(
     std::thread::spawn(move || {
         let t = crate::i18n::get(&lang);
         crate::logger::write("runner", "INFO", &format!(
-            "=== Installation démarrée — {} programme(s) — langue: {lang} ===", programs.len()
+            "=== Installation démarrée — {} programme(s) — langue: {lang} ===",
+            programs.len()
         ));
 
+        // Repaint pump: ensures UI updates every 50 ms regardless of thread scheduling.
+        let pump = start_repaint_pump(&ctx);
+
+        // Pre-check phase (sequential — needs connectivity before downloads).
         run_precheck(&programs, &log_out, t, &ctx);
 
-        for (name, release, branch, language, lang_folder) in programs {
-            // ── Start ─────────────────────────────────────────────────────────
-            action(&log_out, &name,
-                t.log_starting_install.replace("{branch}", &branch));
-            set_status(&log_out, &name, InstallStatus::Downloading(name.clone()));
-            ctx.request_repaint();
+        // Install all programs in parallel — one thread per program.
+        let handles: Vec<_> = programs
+            .into_iter()
+            .map(|(name, release, branch, language, lang_folder)| {
+                let log   = Arc::clone(&log_out);
+                let opts  = options.clone();
+                let ctx2  = ctx.clone();
+                std::thread::spawn(move || {
+                    install_single(name, release, branch, language, lang_folder, log, opts, t, ctx2);
+                })
+            })
+            .collect();
 
-            // ── 1. Prepare directories ────────────────────────────────────────
-            let install_dir = paths::program_files_dir(&name);
-            let appdata_dir = paths::appdata_dir(&name);
-            let tmp_dir     = paths::temp_dir(&name);
-
-            crate::logger::write("runner", "INFO", &format!(
-                "{name}: install='{}' appdata='{}' tmp='{}'",
-                install_dir.display(), appdata_dir.display(), tmp_dir.display()
-            ));
-            action(&log_out, &name,
-                t.log_creating_install_dir.replace("{path}", &install_dir.display().to_string()));
-            if let Err(e) = std::fs::create_dir_all(&install_dir) {
-                crate::logger::write("runner", "ERROR", &format!("{name}: mkdir install: {e}"));
-                set_status(&log_out, &name, InstallStatus::Error(format!("mkdir install: {e}")));
-                continue;
-            }
-
-            action(&log_out, &name,
-                t.log_creating_data_dir.replace("{path}", &appdata_dir.display().to_string()));
-            if let Err(e) = std::fs::create_dir_all(&appdata_dir) {
-                crate::logger::write("runner", "ERROR", &format!("{name}: mkdir appdata: {e}"));
-                set_status(&log_out, &name, InstallStatus::Error(format!("mkdir appdata: {e}")));
-                continue;
-            }
-
-            // ── 2. Certificate ────────────────────────────────────────────────
-            let cert_url = github::certificate_url(&name, &branch);
-            action(&log_out, &name,
-                t.log_checking_cert.replace("{url}", &cert_url));
-            if certificates::cert_exists(&cert_url) {
-                set_status(&log_out, &name,
-                    InstallStatus::Installing(format!("Certificat {name}")));
-                action(&log_out, &name, t.log_installing_cert);
-                if let Err(e) = certificates::install_certificate(&cert_url, &name, &tmp_dir) {
-                    crate::logger::write("runner", "ERROR", &format!("{name}: certificat: {e}"));
-                    set_status(&log_out, &name, InstallStatus::Error(format!("Certificat: {e}")));
-                    continue;
-                }
-            }
-
-            // ── 3. Download binary ────────────────────────────────────────────
-            action(&log_out, &name, t.log_searching_asset);
-            let exe_path = match download_binary(&name, release.as_ref(), &install_dir, &log_out, t) {
-                Ok(p) => p,
-                Err(e) => {
-                    crate::logger::write("runner", "ERROR", &format!("{name}: {e}"));
-                    set_status(&log_out, &name, InstallStatus::Error(e));
-                    ctx.request_repaint();
-                    continue;
-                }
-            };
-
-            // ── 4. Language file ──────────────────────────────────────────────
-            action(&log_out, &name,
-                t.log_copying_lang.replace("{lang}", &language));
-            if let Err(e) = copy_lang_file(&name, &branch, &language, &lang_folder, &appdata_dir) {
-                crate::logger::write("runner", "WARN",
-                    &format!("{name}: copie langue '{language}' impossible: {e}"));
-            }
-
-            // ── 5. Shortcuts ──────────────────────────────────────────────────
-            set_status(&log_out, &name,
-                InstallStatus::Installing(format!("Raccourcis {name}")));
-            if options.desktop_shortcut {
-                action(&log_out, &name, t.log_creating_desktop);
-                if let Err(e) = shortcuts::create_desktop_shortcut(&name, &exe_path) {
-                    crate::logger::write("runner", "WARN",
-                        &format!("{name}: raccourci bureau: {e}"));
-                }
-            }
-            if options.quicklaunch_shortcut {
-                action(&log_out, &name, t.log_creating_start);
-                if let Err(e) = shortcuts::create_start_menu_shortcut(&name, &exe_path) {
-                    crate::logger::write("runner", "WARN",
-                        &format!("{name}: raccourci démarrer: {e}"));
-                }
-            }
-
-            // ── 6. Install record ─────────────────────────────────────────────
-            action(&log_out, &name, t.log_writing_record);
-            let version = release.as_ref()
-                .map(|r| r.tag_name.clone())
-                .unwrap_or_else(|| "unknown".to_string());
-            let record = paths::InstallRecord {
-                version,
-                exe_path: exe_path.to_string_lossy().to_string(),
-                installed_at: chrono_now(),
-            };
-            if let Err(e) = paths::write_install_record(&name, &record) {
-                crate::logger::write("runner", "WARN",
-                    &format!("{name}: install.json: {e}"));
-            }
-
-            set_status(&log_out, &name, InstallStatus::Done(name.clone()));
-            action(&log_out, &name, t.log_install_done);
-            ctx.request_repaint();
+        for h in handles {
+            h.join().ok();
         }
 
+        pump.store(false, Ordering::Relaxed); // stop pump after all threads finish
         crate::logger::write("runner", "INFO", "=== Installation terminée ===");
-        ctx.request_repaint();
     });
+}
+
+pub fn uninstall_programs(names: Vec<String>, log_out: Log, lang: String, ctx: Context) {
+    std::thread::spawn(move || {
+        let t = crate::i18n::get(&lang);
+        crate::logger::write("runner", "INFO", &format!(
+            "=== Désinstallation démarrée — {} programme(s) ===", names.len()
+        ));
+
+        let pump = start_repaint_pump(&ctx);
+
+        // Uninstall all programs in parallel.
+        let handles: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                let log  = Arc::clone(&log_out);
+                let ctx2 = ctx.clone();
+                std::thread::spawn(move || {
+                    uninstall_single(name, log, t, ctx2);
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().ok();
+        }
+
+        cleanup_empty_roots();
+        pump.store(false, Ordering::Relaxed);
+        crate::logger::write("runner", "INFO", "=== Désinstallation terminée ===");
+    });
+}
+
+// ── Per-program install ───────────────────────────────────────────────────────
+
+fn install_single(
+    name: String,
+    release: Option<GithubRelease>,
+    branch: String,
+    language: String,
+    lang_folder: String,
+    log: Log,
+    options: InstallOptions,
+    t: &'static crate::i18n::Translations,
+    ctx: Context,
+) {
+    macro_rules! fail {
+        ($msg:expr) => {{
+            crate::logger::write("runner", "ERROR", &format!("{name}: {}", $msg));
+            set_status(&log, &name, InstallStatus::Error($msg));
+            ctx.request_repaint();
+            return;
+        }};
+    }
+
+    // ── Start ─────────────────────────────────────────────────────────────────
+    action(&log, &name, t.log_starting_install.replace("{branch}", &branch));
+    set_status(&log, &name, InstallStatus::Downloading(name.clone()));
+    ctx.request_repaint();
+
+    // ── 1. Directories ────────────────────────────────────────────────────────
+    let install_dir = paths::program_files_dir(&name);
+    let appdata_dir = paths::appdata_dir(&name);
+    let tmp_dir     = paths::temp_dir(&name);
+
+    crate::logger::write("runner", "INFO", &format!(
+        "{name}: install='{}' appdata='{}' tmp='{}'",
+        install_dir.display(), appdata_dir.display(), tmp_dir.display()
+    ));
+
+    action(&log, &name, t.log_creating_install_dir.replace("{path}", &install_dir.display().to_string()));
+    if let Err(e) = std::fs::create_dir_all(&install_dir) {
+        fail!(format!("mkdir install: {e}"));
+    }
+
+    action(&log, &name, t.log_creating_data_dir.replace("{path}", &appdata_dir.display().to_string()));
+    if let Err(e) = std::fs::create_dir_all(&appdata_dir) {
+        fail!(format!("mkdir appdata: {e}"));
+    }
+
+    // ── 2. Certificate ────────────────────────────────────────────────────────
+    let cert_url = github::certificate_url(&name, &branch);
+    action(&log, &name, t.log_checking_cert.replace("{url}", &cert_url));
+    if certificates::cert_exists(&cert_url) {
+        set_status(&log, &name, InstallStatus::Installing(format!("Certificat {name}")));
+        ctx.request_repaint();
+        action(&log, &name, t.log_installing_cert);
+        if let Err(e) = certificates::install_certificate(&cert_url, &name, &tmp_dir) {
+            fail!(format!("Certificat: {e}"));
+        }
+    }
+
+    // ── 3. Binary download ────────────────────────────────────────────────────
+    action(&log, &name, t.log_searching_asset);
+    let exe_path = match download_binary(&name, release.as_ref(), &install_dir, &log, t) {
+        Ok(p) => p,
+        Err(e) => { fail!(e); }
+    };
+    ctx.request_repaint();
+
+    // ── 4. Language file ──────────────────────────────────────────────────────
+    action(&log, &name, t.log_copying_lang.replace("{lang}", &language));
+    if let Err(e) = copy_lang_file(&name, &branch, &language, &lang_folder, &appdata_dir) {
+        crate::logger::write("runner", "WARN",
+            &format!("{name}: copie langue '{language}' impossible: {e}"));
+    }
+
+    // ── 5. Shortcuts ──────────────────────────────────────────────────────────
+    set_status(&log, &name, InstallStatus::Installing(format!("Raccourcis {name}")));
+    ctx.request_repaint();
+    if options.desktop_shortcut {
+        action(&log, &name, t.log_creating_desktop);
+        if let Err(e) = shortcuts::create_desktop_shortcut(&name, &exe_path) {
+            crate::logger::write("runner", "WARN", &format!("{name}: raccourci bureau: {e}"));
+        }
+    }
+    if options.quicklaunch_shortcut {
+        action(&log, &name, t.log_creating_start);
+        if let Err(e) = shortcuts::create_start_menu_shortcut(&name, &exe_path) {
+            crate::logger::write("runner", "WARN", &format!("{name}: raccourci démarrer: {e}"));
+        }
+    }
+
+    // ── 6. Install record ─────────────────────────────────────────────────────
+    action(&log, &name, t.log_writing_record);
+    let version = release.as_ref()
+        .map(|r| r.tag_name.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    let record = paths::InstallRecord {
+        version,
+        exe_path: exe_path.to_string_lossy().to_string(),
+        installed_at: chrono_now(),
+    };
+    if let Err(e) = paths::write_install_record(&name, &record) {
+        crate::logger::write("runner", "WARN", &format!("{name}: install.json: {e}"));
+    }
+
+    set_status(&log, &name, InstallStatus::Done(name.clone()));
+    action(&log, &name, t.log_install_done);
+    ctx.request_repaint();
+}
+
+// ── Per-program uninstall ─────────────────────────────────────────────────────
+
+fn uninstall_single(
+    name: String,
+    log: Log,
+    t: &'static crate::i18n::Translations,
+    ctx: Context,
+) {
+    action(&log, &name, t.log_starting_uninstall.replace("{name}", &name));
+    set_status(&log, &name, InstallStatus::Installing(format!("Désinstallation {name}")));
+    ctx.request_repaint();
+
+    let install_dir = paths::program_files_dir(&name);
+    let appdata_dir = paths::appdata_dir(&name);
+    let tmp_dir     = paths::temp_dir(&name);
+
+    // Install dir
+    action(&log, &name, t.log_removing.replace("{path}", &install_dir.display().to_string()));
+    if install_dir.exists() {
+        match std::fs::remove_dir_all(&install_dir) {
+            Ok(_) => crate::logger::write("runner", "INFO", &format!("{name}: dossier install supprimé")),
+            Err(e) => {
+                let msg = t.log_cannot_remove
+                    .replace("{path}", &install_dir.display().to_string())
+                    .replace("{error}", &e.to_string());
+                crate::logger::write("runner", "ERROR", &format!("{name}: {msg}"));
+                action(&log, &name, msg);
+            }
+        }
+    } else {
+        action(&log, &name, t.log_dir_already_removed.replace("{path}", &install_dir.display().to_string()));
+    }
+    ctx.request_repaint();
+
+    // Shortcuts
+    action(&log, &name, t.log_removing_shortcuts);
+    remove_shortcut_desktop(&name);
+    remove_shortcut_start_menu(&name);
+
+    // Tmp
+    action(&log, &name, t.log_removing.replace("{path}", &tmp_dir.display().to_string()));
+    if tmp_dir.exists() { let _ = std::fs::remove_dir_all(&tmp_dir); }
+
+    // AppData
+    action(&log, &name, t.log_removing.replace("{path}", &appdata_dir.display().to_string()));
+    if appdata_dir.exists() {
+        match std::fs::remove_dir_all(&appdata_dir) {
+            Ok(_) => crate::logger::write("runner", "INFO", &format!("{name}: appdata supprimé")),
+            Err(e) => {
+                let msg = t.log_cannot_remove
+                    .replace("{path}", &appdata_dir.display().to_string())
+                    .replace("{error}", &e.to_string());
+                crate::logger::write("runner", "ERROR", &format!("{name}: {msg}"));
+                action(&log, &name, msg);
+            }
+        }
+    }
+
+    set_status(&log, &name, InstallStatus::Done(name.clone()));
+    action(&log, &name, t.log_uninstall_done);
+    ctx.request_repaint();
+}
+
+// ── Pre-check phase ───────────────────────────────────────────────────────────
+
+fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Translations, ctx: &Context) {
+    let key = t.precheck_title;
+
+    {
+        let mut l = log.lock().unwrap();
+        l.insert(0, crate::state::InstallLogEntry {
+            app: key.to_string(),
+            status: crate::state::InstallStatus::Installing(key.to_string()),
+            actions: Vec::new(),
+        });
+    }
+
+    // 1. Connectivity
+    action(log, key, t.precheck_checking_conn);
+    let conn_ms = match crate::github::check_connectivity() {
+        Ok(ms) => {
+            action(log, key, t.precheck_conn_ok.replace("{ms}", &ms.to_string()));
+            crate::logger::write("runner", "INFO", &format!("GitHub joignable en {ms}ms"));
+            Some(ms)
+        }
+        Err(e) => {
+            action(log, key, t.precheck_conn_failed.replace("{error}", &e));
+            crate::logger::write("runner", "WARN", &format!("GitHub inaccessible: {e}"));
+            None
+        }
+    };
+
+    // 2. Total download size
+    let total_bytes: u64 = programs.iter()
+        .filter_map(|(_, release, _, _, _)| release.as_ref())
+        .filter_map(|r| pick_windows_asset(&r.assets))
+        .map(|a| a.size)
+        .sum();
+
+    if total_bytes > 0 {
+        let msg = t.precheck_total_size.replace("{size}", &human_size(total_bytes));
+        action(log, key, &msg);
+        crate::logger::write("runner", "INFO", &msg);
+    }
+
+    // 3. Speed test + ETA
+    if conn_ms.is_some() {
+        action(log, key, t.precheck_speed_test);
+        if let Ok(bps) = estimate_speed_bps() {
+            if bps > 0 {
+                let msg = t.precheck_speed.replace("{speed}", &human_speed(bps));
+                action(log, key, &msg);
+                crate::logger::write("runner", "INFO", &msg);
+
+                if total_bytes > 0 {
+                    let eta_msg = t.precheck_eta.replace("{eta}", &format_eta(total_bytes / bps.max(1)));
+                    action(log, key, &eta_msg);
+                    crate::logger::write("runner", "INFO", &eta_msg);
+                }
+            }
+        }
+    }
+
+    set_status(log, key, crate::state::InstallStatus::Done(t.precheck_done.to_string()));
+    ctx.request_repaint();
+    crate::logger::write("runner", "INFO", "Pré-vérification terminée");
 }
 
 // ── Binary download ───────────────────────────────────────────────────────────
@@ -174,9 +378,7 @@ fn download_binary(
     log: &Log,
     t: &crate::i18n::Translations,
 ) -> Result<std::path::PathBuf, String> {
-    let release = release.ok_or_else(|| {
-        format!("{name}: {}", t.log_no_release)
-    })?;
+    let release = release.ok_or_else(|| format!("{name}: {}", t.log_no_release))?;
 
     let asset = pick_windows_asset(&release.assets)
         .ok_or_else(|| format!("{name}: {}", t.log_no_windows_asset))?;
@@ -203,9 +405,7 @@ fn download_binary(
     {
         let mut l = log.lock().unwrap();
         if let Some(entry) = l.iter_mut().find(|e| e.app == name) {
-            entry.status = InstallStatus::Downloading(
-                format!("{} ({})", name, human_size(asset.size))
-            );
+            entry.status = InstallStatus::Downloading(format!("{} ({})", name, human_size(asset.size)));
         }
     }
 
@@ -254,10 +454,8 @@ fn download_binary(
         action(log, name, t.log_no_sha256);
     }
 
-    // Write tmp
     std::fs::write(&tmp_path, &bytes).map_err(|e| format!("{name}: écriture tmp: {e}"))?;
 
-    // Extract or copy
     let exe_path = if asset.name.ends_with(".zip") {
         action(log, name, t.log_extracting_zip);
         extract_zip(&tmp_path, install_dir, name).map_err(|e| format!("{name}: zip: {e}"))?
@@ -298,78 +496,7 @@ fn pick_windows_asset(assets: &[ReleaseAsset]) -> Option<&ReleaseAsset> {
         .map(|(a, _)| a)
 }
 
-// ── Pre-check phase ───────────────────────────────────────────────────────────
-
-fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Translations, ctx: &Context) {
-    let key = t.precheck_title;
-
-    {
-        let mut l = log.lock().unwrap();
-        l.insert(0, crate::state::InstallLogEntry {
-            app: key.to_string(),
-            status: crate::state::InstallStatus::Installing(key.to_string()),
-            actions: Vec::new(),
-        });
-    }
-    ctx.request_repaint();
-
-    // 1. Connectivity
-    action(log, key, t.precheck_checking_conn);
-    ctx.request_repaint();
-    let conn_ms = match crate::github::check_connectivity() {
-        Ok(ms) => {
-            action(log, key, t.precheck_conn_ok.replace("{ms}", &ms.to_string()));
-            crate::logger::write("runner", "INFO", &format!("GitHub joignable en {ms}ms"));
-            Some(ms)
-        }
-        Err(e) => {
-            action(log, key, t.precheck_conn_failed.replace("{error}", &e));
-            crate::logger::write("runner", "WARN", &format!("GitHub inaccessible: {e}"));
-            None
-        }
-    };
-    ctx.request_repaint();
-
-    // 2. Total download size from selected assets
-    let total_bytes: u64 = programs.iter()
-        .filter_map(|(_, release, _, _, _)| release.as_ref())
-        .filter_map(|r| pick_windows_asset(&r.assets))
-        .map(|a| a.size)
-        .sum();
-
-    if total_bytes > 0 {
-        let msg = t.precheck_total_size.replace("{size}", &human_size(total_bytes));
-        action(log, key, &msg);
-        crate::logger::write("runner", "INFO", &msg);
-        ctx.request_repaint();
-    }
-
-    // 3. Speed test + ETA (only if connectivity confirmed)
-    if conn_ms.is_some() {
-        action(log, key, t.precheck_speed_test);
-        ctx.request_repaint();
-        match estimate_speed_bps() {
-            Ok(bps) if bps > 0 => {
-                let msg = t.precheck_speed.replace("{speed}", &human_speed(bps));
-                action(log, key, &msg);
-                crate::logger::write("runner", "INFO", &msg);
-
-                if total_bytes > 0 {
-                    let eta_secs = total_bytes / bps.max(1);
-                    let eta_msg = t.precheck_eta.replace("{eta}", &format_eta(eta_secs));
-                    action(log, key, &eta_msg);
-                    crate::logger::write("runner", "INFO", &eta_msg);
-                }
-            }
-            _ => {}
-        }
-        ctx.request_repaint();
-    }
-
-    set_status(log, key, crate::state::InstallStatus::Done(t.precheck_done.to_string()));
-    crate::logger::write("runner", "INFO", "Pré-vérification terminée");
-    ctx.request_repaint();
-}
+// ── Speed test helpers ────────────────────────────────────────────────────────
 
 fn estimate_speed_bps() -> Result<u64, String> {
     let client = reqwest::blocking::Client::builder()
@@ -400,6 +527,8 @@ fn format_eta(secs: u64) -> String {
     else { format!("{}h {:02}m", secs / 3600, (secs % 3600) / 60) }
 }
 
+// ── Network helpers ───────────────────────────────────────────────────────────
+
 fn fetch_bytes(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -414,30 +543,6 @@ fn fetch_bytes(
     }
     resp.bytes().map(|b| b.to_vec())
         .map_err(|e| format!("{name}: lecture ({url}): {e}"))
-}
-
-fn extract_zip(
-    zip_path: &std::path::Path,
-    dest_dir: &std::path::Path,
-    app_name: &str,
-) -> anyhow::Result<std::path::PathBuf> {
-    let file = std::fs::File::open(zip_path)?;
-    let mut archive = zip::ZipArchive::new(file)?;
-    let mut exe_path = dest_dir.join(format!("{}.exe", app_name));
-
-    for i in 0..archive.len() {
-        let mut zf = archive.by_index(i)?;
-        let out = dest_dir.join(zf.name());
-        if zf.name().ends_with('/') {
-            std::fs::create_dir_all(&out)?;
-        } else {
-            if let Some(p) = out.parent() { std::fs::create_dir_all(p)?; }
-            let mut outfile = std::fs::File::create(&out)?;
-            std::io::copy(&mut zf, &mut outfile)?;
-            if zf.name().ends_with(".exe") { exe_path = out.clone(); }
-        }
-    }
-    Ok(exe_path)
 }
 
 fn copy_lang_file(
@@ -482,83 +587,33 @@ fn copy_lang_file(
     anyhow::bail!("aucun fichier de langue pour {name} (cherche: {})", candidates.join(", "))
 }
 
-// ── Uninstall ─────────────────────────────────────────────────────────────────
+// ── ZIP extraction ────────────────────────────────────────────────────────────
 
-pub fn uninstall_programs(names: Vec<String>, log_out: Log, lang: String, ctx: Context) {
-    std::thread::spawn(move || {
-        let t = crate::i18n::get(&lang);
-        crate::logger::write("runner", "INFO", &format!(
-            "=== Désinstallation démarrée — {} programme(s) ===", names.len()
-        ));
+fn extract_zip(
+    zip_path: &std::path::Path,
+    dest_dir: &std::path::Path,
+    app_name: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    let file = std::fs::File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    let mut exe_path = dest_dir.join(format!("{}.exe", app_name));
 
-        for name in names {
-            action(&log_out, &name,
-                t.log_starting_uninstall.replace("{name}", &name));
-            set_status(&log_out, &name,
-                InstallStatus::Installing(format!("Désinstallation {name}")));
-            ctx.request_repaint();
-
-            let install_dir = paths::program_files_dir(&name);
-            let appdata_dir = paths::appdata_dir(&name);
-            let tmp_dir     = paths::temp_dir(&name);
-
-            // Remove install dir
-            action(&log_out, &name,
-                t.log_removing.replace("{path}", &install_dir.display().to_string()));
-            if install_dir.exists() {
-                match std::fs::remove_dir_all(&install_dir) {
-                    Ok(_) => crate::logger::write("runner", "INFO",
-                        &format!("{name}: dossier install supprimé")),
-                    Err(e) => {
-                        let msg = t.log_cannot_remove
-                            .replace("{path}", &install_dir.display().to_string())
-                            .replace("{error}", &e.to_string());
-                        crate::logger::write("runner", "ERROR", &format!("{name}: {msg}"));
-                        action(&log_out, &name, msg);
-                    }
-                }
-            } else {
-                action(&log_out, &name,
-                    t.log_dir_already_removed.replace("{path}", &install_dir.display().to_string()));
-            }
-
-            // Shortcuts
-            action(&log_out, &name, t.log_removing_shortcuts);
-            remove_shortcut_desktop(&name);
-            remove_shortcut_start_menu(&name);
-
-            // Tmp
-            action(&log_out, &name,
-                t.log_removing.replace("{path}", &tmp_dir.display().to_string()));
-            if tmp_dir.exists() { let _ = std::fs::remove_dir_all(&tmp_dir); }
-
-            // AppData
-            action(&log_out, &name,
-                t.log_removing.replace("{path}", &appdata_dir.display().to_string()));
-            if appdata_dir.exists() {
-                match std::fs::remove_dir_all(&appdata_dir) {
-                    Ok(_) => crate::logger::write("runner", "INFO",
-                        &format!("{name}: appdata supprimé")),
-                    Err(e) => {
-                        let msg = t.log_cannot_remove
-                            .replace("{path}", &appdata_dir.display().to_string())
-                            .replace("{error}", &e.to_string());
-                        crate::logger::write("runner", "ERROR", &format!("{name}: {msg}"));
-                        action(&log_out, &name, msg);
-                    }
-                }
-            }
-
-            set_status(&log_out, &name, InstallStatus::Done(name.clone()));
-            action(&log_out, &name, t.log_uninstall_done);
-            ctx.request_repaint();
+    for i in 0..archive.len() {
+        let mut zf = archive.by_index(i)?;
+        let out = dest_dir.join(zf.name());
+        if zf.name().ends_with('/') {
+            std::fs::create_dir_all(&out)?;
+        } else {
+            if let Some(p) = out.parent() { std::fs::create_dir_all(p)?; }
+            let mut outfile = std::fs::File::create(&out)?;
+            std::io::copy(&mut zf, &mut outfile)?;
+            if zf.name().ends_with(".exe") { exe_path = out.clone(); }
         }
-
-        cleanup_empty_roots();
-        crate::logger::write("runner", "INFO", "=== Désinstallation terminée ===");
-        ctx.request_repaint();
-    });
+    }
+    Ok(exe_path)
 }
+
+// ── Shortcut removal ──────────────────────────────────────────────────────────
 
 fn remove_shortcut_desktop(app_name: &str) {
     if let Some(desktop) = dirs::desktop_dir() {
@@ -592,6 +647,8 @@ fn remove_shortcut_start_menu(app_name: &str) {
         }
     }
 }
+
+// ── Cleanup ───────────────────────────────────────────────────────────────────
 
 fn cleanup_empty_roots() {
     let base = dirs::data_dir().unwrap_or_default().join("rusty-suite");

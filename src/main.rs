@@ -217,9 +217,6 @@ impl InstallerApp {
     }
 
     fn start_uninstallation(&mut self, ctx: egui::Context) {
-        self.state.screen = Screen::Installing;
-        self.state.is_uninstall = true;
-
         let to_uninstall: Vec<String> = self
             .state
             .programs
@@ -227,6 +224,19 @@ impl InstallerApp {
             .filter(|p| p.selected && p.installed_version.is_some())
             .map(|p| p.repo.name.clone())
             .collect();
+
+        if to_uninstall.is_empty() {
+            logger::write("main", "WARN", "Désinstallation demandée mais aucun programme installé sélectionné");
+            return;
+        }
+
+        logger::write("main", "INFO", "=== Démarrage de la désinstallation ===");
+        logger::write("main", "INFO", &format!(
+            "{} programme(s) à désinstaller : {:?}", to_uninstall.len(), to_uninstall
+        ));
+
+        self.state.screen = Screen::Installing;
+        self.state.is_uninstall = true;
 
         {
             let mut l = self.log.lock().unwrap();
