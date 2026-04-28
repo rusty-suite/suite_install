@@ -15,6 +15,12 @@ struct AnimFrame {
 /// Cached GPU texture handles — initialised once on first render.
 static ANIM_FRAMES: OnceLock<Mutex<Vec<AnimFrame>>> = OnceLock::new();
 
+/// Call this early (e.g. during the Loading screen) so the WebP decoding
+/// happens on the UI thread before the user ever clicks Install.
+pub fn preload_frames(ctx: &egui::Context) {
+    ANIM_FRAMES.get_or_init(|| Mutex::new(load_anim_frames(ctx)));
+}
+
 pub fn show(
     ui: &mut Ui,
     log: &[InstallLogEntry],

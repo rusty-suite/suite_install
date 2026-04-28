@@ -319,6 +319,7 @@ impl eframe::App for InstallerApp {
 }
 
 fn show_loading(ui: &mut egui::Ui, error: &Option<String>, t: &i18n::Translations) {
+    screens::installing::preload_frames(ui.ctx());
     ui.vertical_centered(|ui| {
         ui.add_space(80.0);
         if let Some(err) = error {
