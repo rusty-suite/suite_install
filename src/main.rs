@@ -205,6 +205,8 @@ impl InstallerApp {
                     app: name.clone(),
                     status: InstallStatus::Pending,
                     actions: Vec::new(),
+                    bytes_done: 0,
+                    bytes_total: 0,
                 });
             }
         }
@@ -246,6 +248,8 @@ impl InstallerApp {
                     app: name.clone(),
                     status: InstallStatus::Pending,
                     actions: Vec::new(),
+                    bytes_done: 0,
+                    bytes_total: 0,
                 });
             }
         }

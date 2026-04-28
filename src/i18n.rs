@@ -98,6 +98,14 @@ pub struct Translations {
     /// Template: {path} {error}
     pub log_cannot_remove:      &'static str,
 
+    // ── Retry / skip messages ─────────────────────────────────────────────────
+    /// Template: {n}/{max} {error}
+    pub log_retry_attempt:      &'static str,
+    /// Template: {n}
+    pub log_retry_wait:         &'static str,
+    /// Template: {version}
+    pub log_already_installed:  &'static str,
+
     // ── Pre-check phase ───────────────────────────────────────────────────────
     pub precheck_title:         &'static str,
     pub precheck_checking_conn: &'static str,
@@ -234,6 +242,10 @@ and accepted all of these terms.
     log_uninstall_done:      "Uninstallation complete",
     log_cannot_remove:       "\u{26a0} Cannot remove {path}: {error}",
 
+    log_retry_attempt:      "Retry {n}/{max}: {error}",
+    log_retry_wait:         "Waiting {n}s before retry\u{2026}",
+    log_already_installed:  "Already installed (version {version}) \u{2014} skipping",
+
     precheck_title:         "Pre-installation check",
     precheck_checking_conn: "Checking GitHub connectivity\u{2026}",
     precheck_conn_ok:       "GitHub reachable ({ms} ms)",
@@ -363,6 +375,10 @@ et accepté l'intégralité des présentes conditions.
     log_removing_shortcuts:  "Suppression des raccourcis",
     log_uninstall_done:      "Désinstallation terminée",
     log_cannot_remove:       "\u{26a0} Impossible de supprimer {path}: {error}",
+
+    log_retry_attempt:      "Tentative {n}/{max}: {error}",
+    log_retry_wait:         "Attente {n}s avant nouvel essai\u{2026}",
+    log_already_installed:  "D\u{e9}j\u{e0} install\u{e9} (version {version}) \u{2014} ignor\u{e9}",
 
     precheck_title:         "Vérification préalable",
     precheck_checking_conn: "Vérification de la connectivité GitHub\u{2026}",
@@ -494,6 +510,10 @@ diese Bedingungen gelesen, verstanden und akzeptiert haben.
     log_uninstall_done:      "Deinstallation abgeschlossen",
     log_cannot_remove:       "\u{26a0} Kann {path} nicht entfernen: {error}",
 
+    log_retry_attempt:      "Versuch {n}/{max}: {error}",
+    log_retry_wait:         "{n}s warten vor Wiederholung\u{2026}",
+    log_already_installed:  "Bereits installiert (Version {version}) \u{2014} \u{fc}bersprungen",
+
     precheck_title:         "Vorinstallationsprüfung",
     precheck_checking_conn: "GitHub-Verbindung wird geprüft\u{2026}",
     precheck_conn_ok:       "GitHub erreichbar ({ms} ms)",
@@ -623,6 +643,10 @@ e accettato integralmente queste condizioni.
     log_removing_shortcuts:  "Rimozione dei collegamenti",
     log_uninstall_done:      "Disinstallazione completata",
     log_cannot_remove:       "\u{26a0} Impossibile rimuovere {path}: {error}",
+
+    log_retry_attempt:      "Tentativo {n}/{max}: {error}",
+    log_retry_wait:         "Attesa {n}s prima del nuovo tentativo\u{2026}",
+    log_already_installed:  "Gi\u{e0} installato (versione {version}) \u{2014} ignorato",
 
     precheck_title:         "Verifica preliminare",
     precheck_checking_conn: "Verifica della connettività GitHub\u{2026}",

@@ -48,7 +48,16 @@ pub fn show(
         .filter(|entry| matches!(entry.status, InstallStatus::Done(_) | InstallStatus::Error(_)))
         .count();
     let total = log.len();
-    let progress = if total == 0 { 0.0 } else { completed as f32 / total as f32 };
+
+    let total_bytes: u64 = log.iter().map(|e| e.bytes_total).sum();
+    let done_bytes: u64  = log.iter().map(|e| e.bytes_done).sum();
+    let progress = if total_bytes > 0 {
+        (done_bytes as f32 / total_bytes as f32).clamp(0.0, 1.0)
+    } else if total == 0 {
+        0.0
+    } else {
+        completed as f32 / total as f32
+    };
 
     let progress_label = t.n_programs_done
         .replace("{n}",     &completed.to_string())

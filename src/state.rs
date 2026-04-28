@@ -51,6 +51,8 @@ pub struct InstallLogEntry {
     pub app: String,
     pub status: InstallStatus,
     pub actions: Vec<String>,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
 }
 
 #[allow(dead_code)]

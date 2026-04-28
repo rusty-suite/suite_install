@@ -38,7 +38,7 @@ fn set_status(log: &Log, app: &str, status: InstallStatus) {
     if let Some(entry) = l.iter_mut().find(|e| e.app == app) {
         entry.status = status;
     } else {
-        l.push(InstallLogEntry { app: app.to_string(), status, actions: Vec::new() });
+        l.push(InstallLogEntry { app: app.to_string(), status, actions: Vec::new(), bytes_done: 0, bytes_total: 0 });
     }
 }
 
@@ -53,7 +53,17 @@ fn action(log: &Log, app: &str, message: impl Into<String>) {
             app: app.to_string(),
             status: InstallStatus::Pending,
             actions: vec![message],
+            bytes_done: 0,
+            bytes_total: 0,
         });
+    }
+}
+
+fn set_bytes(log: &Log, app: &str, done: u64, total: u64) {
+    let mut l = log.lock().unwrap();
+    if let Some(entry) = l.iter_mut().find(|e| e.app == app) {
+        entry.bytes_done = done;
+        entry.bytes_total = total;
     }
 }
 
@@ -191,11 +201,33 @@ fn install_single(
         }
     }
 
-    // ── 3. Binary download ────────────────────────────────────────────────────
+    // ── 3. Binary download (with retry) ──────────────────────────────────────
     action(&log, &name, t.log_searching_asset);
-    let exe_path = match download_binary(&name, release.as_ref(), &install_dir, &log, t) {
-        Ok(p) => p,
-        Err(e) => { fail!(e); }
+    const MAX_RETRIES: u32 = 3;
+    let exe_path = {
+        let mut last_err = String::new();
+        let mut result: Option<std::path::PathBuf> = None;
+        for attempt in 0..=MAX_RETRIES {
+            if attempt > 0 {
+                let wait = 1u64 << (attempt - 1);
+                let retry_msg = t.log_retry_attempt
+                    .replace("{n}", &attempt.to_string())
+                    .replace("{max}", &MAX_RETRIES.to_string())
+                    .replace("{error}", &last_err);
+                action(&log, &name, &retry_msg);
+                crate::logger::write("runner", "WARN", &format!("{name}: {retry_msg}"));
+                action(&log, &name, t.log_retry_wait.replace("{n}", &wait.to_string()));
+                std::thread::sleep(std::time::Duration::from_secs(wait));
+            }
+            match download_binary(&name, release.as_ref(), &install_dir, &log, t) {
+                Ok(p) => { result = Some(p); break; }
+                Err(e) => { last_err = e; }
+            }
+        }
+        match result {
+            Some(p) => p,
+            None => { fail!(last_err); }
+        }
     };
     ctx.request_repaint();
 
@@ -315,6 +347,8 @@ fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Transla
             app: key.to_string(),
             status: crate::state::InstallStatus::Installing(key.to_string()),
             actions: Vec::new(),
+            bytes_done: 0,
+            bytes_total: 0,
         });
     }
 
@@ -333,12 +367,20 @@ fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Transla
         }
     };
 
-    // 2. Total download size
+    // 2. Total download size — also seed bytes_total per program so the progress bar works
     let total_bytes: u64 = programs.iter()
         .filter_map(|(_, release, _, _, _)| release.as_ref())
         .filter_map(|r| pick_windows_asset(&r.assets))
         .map(|a| a.size)
         .sum();
+
+    for (prog_name, release, _, _, _) in programs {
+        if let Some(rel) = release {
+            if let Some(asset) = pick_windows_asset(&rel.assets) {
+                set_bytes(log, prog_name, 0, asset.size);
+            }
+        }
+    }
 
     if total_bytes > 0 {
         let msg = t.precheck_total_size.replace("{size}", &human_size(total_bytes));
@@ -380,6 +422,23 @@ fn download_binary(
 ) -> Result<std::path::PathBuf, String> {
     let release = release.ok_or_else(|| format!("{name}: {}", t.log_no_release))?;
 
+    // Resumability: skip download if the same version is already installed and exe exists.
+    if let Some(record) = paths::read_install_record(name) {
+        if record.version == release.tag_name {
+            let exe = std::path::PathBuf::from(&record.exe_path);
+            if exe.exists() {
+                let msg = t.log_already_installed.replace("{version}", &record.version);
+                action(log, name, &msg);
+                crate::logger::write("runner", "INFO", &format!("{name}: {msg}"));
+                // Mark as fully downloaded for the progress bar.
+                if let Some(asset) = pick_windows_asset(&release.assets) {
+                    set_bytes(log, name, asset.size, asset.size);
+                }
+                return Ok(exe);
+            }
+        }
+    }
+
     let asset = pick_windows_asset(&release.assets)
         .ok_or_else(|| format!("{name}: {}", t.log_no_windows_asset))?;
 
@@ -415,7 +474,7 @@ fn download_binary(
         .build()
         .map_err(|e| e.to_string())?;
 
-    let bytes = fetch_bytes(&client, &asset.browser_download_url, name)?;
+    let bytes = fetch_bytes(&client, &asset.browser_download_url, name, Some((log, 0)))?;
 
     // Size check
     let expected_size = asset.size;
@@ -433,7 +492,7 @@ fn download_binary(
     // SHA-256 check
     if let Some(sha_asset) = sha256_asset {
         action(log, name, t.log_sha256_checking);
-        let sha_bytes = fetch_bytes(&client, &sha_asset.browser_download_url, name)?;
+        let sha_bytes = fetch_bytes(&client, &sha_asset.browser_download_url, name, None)?;
         let expected_hex = String::from_utf8_lossy(&sha_bytes)
             .split_whitespace().next().unwrap_or("").to_lowercase();
 
@@ -533,16 +592,38 @@ fn fetch_bytes(
     client: &reqwest::blocking::Client,
     url: &str,
     name: &str,
+    progress: Option<(&Log, u64)>,
 ) -> Result<Vec<u8>, String> {
-    let resp = client.get(url).send()
+    use std::io::Read;
+
+    let mut resp = client.get(url).send()
         .map_err(|e| format!("{name}: connexion ({url}): {e}"))?;
     let status = resp.status();
     crate::logger::write("runner", "HTTP", &format!("{name}: GET {url} -> {status}"));
     if !status.is_success() {
         return Err(format!("{name}: HTTP {status} pour {url}"));
     }
-    resp.bytes().map(|b| b.to_vec())
-        .map_err(|e| format!("{name}: lecture ({url}): {e}"))
+
+    let content_length = resp.content_length().unwrap_or(0);
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 65536];
+
+    loop {
+        match resp.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                buf.extend_from_slice(&chunk[..n]);
+                if let Some((log, base)) = &progress {
+                    let downloaded = base + buf.len() as u64;
+                    let total = if content_length > 0 { base + content_length } else { downloaded };
+                    set_bytes(log, name, downloaded, total);
+                }
+            }
+            Err(e) => return Err(format!("{name}: lecture ({url}): {e}")),
+        }
+    }
+
+    Ok(buf)
 }
 
 fn copy_lang_file(
@@ -651,6 +732,7 @@ fn remove_shortcut_start_menu(app_name: &str) {
 // ── Cleanup ───────────────────────────────────────────────────────────────────
 
 fn cleanup_empty_roots() {
+    // AppData\Roaming\rusty-suite (and its .tmp subfolder)
     let base = dirs::data_dir().unwrap_or_default().join("rusty-suite");
     let tmp = base.join(".tmp");
     if tmp.exists() {
@@ -663,17 +745,29 @@ fn cleanup_empty_roots() {
             .map(|mut d| d.next().is_none()).unwrap_or(false);
         if is_empty {
             let _ = std::fs::remove_dir(&base);
-            crate::logger::write("runner", "INFO", "Dossier rusty-suite vide supprimé");
+            crate::logger::write("runner", "INFO", "Dossier AppData/rusty-suite vide supprimé");
         }
     }
-    let pf_base = paths::program_files_dir("__sentinel__")
-        .parent().unwrap_or(std::path::Path::new(""))
-        .parent().unwrap_or(std::path::Path::new(""))
-        .to_path_buf();
-    if pf_base.exists() {
-        let is_empty = std::fs::read_dir(&pf_base)
-            .map(|mut d| d.next().is_none()).unwrap_or(false);
-        if is_empty { let _ = std::fs::remove_dir(&pf_base); }
+
+    // AppData\Local\Programs\rusty-suite  (sentinel parent = that dir)
+    // paths::program_files_dir("x") = …\Programs\rusty-suite\x
+    let sentinel = paths::program_files_dir("__sentinel__");
+    if let Some(rs_dir) = sentinel.parent() {
+        if rs_dir.exists() {
+            let is_empty = std::fs::read_dir(rs_dir)
+                .map(|mut d| d.next().is_none()).unwrap_or(false);
+            if is_empty {
+                let _ = std::fs::remove_dir(rs_dir);
+                crate::logger::write("runner", "INFO",
+                    &format!("Dossier Programs/rusty-suite vide supprimé: {}", rs_dir.display()));
+                // Try to also remove Programs if now empty
+                if let Some(programs_dir) = rs_dir.parent() {
+                    let is_empty = std::fs::read_dir(programs_dir)
+                        .map(|mut d| d.next().is_none()).unwrap_or(false);
+                    if is_empty { let _ = std::fs::remove_dir(programs_dir); }
+                }
+            }
+        }
     }
 }
 
