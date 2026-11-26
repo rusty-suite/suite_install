@@ -8,6 +8,15 @@ et le projet respecte le [Versionnage sémantique](https://semver.org/lang/fr/) 
 
 ## [Non publié]
 
+## [0.2.2] - 2026-11-26
+
+### Corrigé
+- Statuts d'installation (certificat, raccourcis, désinstallation) et erreurs de
+  téléchargement (connexion, HTTP, lecture, taille, SHA-256) affichés dans la langue choisie.
+
+### Modifié
+- La configuration locale `.claude/` n'est plus suivie par git.
+
 ## [0.2.1] - 2026-11-26
 
 ### Corrigé
@@ -39,7 +48,8 @@ et le projet respecte le [Versionnage sémantique](https://semver.org/lang/fr/) 
 
 Première pré-release publique (tag historique `Win_&_Linux`).
 
-[Non publié]: https://github.com/rusty-suite/suite_install/compare/v0.2.1...HEAD
+[Non publié]: https://github.com/rusty-suite/suite_install/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/rusty-suite/suite_install/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/rusty-suite/suite_install/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rusty-suite/suite_install/compare/Win_%26_Linux...v0.2.0
 [0.1.0]: https://github.com/rusty-suite/suite_install/releases/tag/Win_%26_Linux
