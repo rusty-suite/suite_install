@@ -193,11 +193,11 @@ fn install_single(
     let cert_url = github::certificate_url(&name, &branch);
     action(&log, &name, t.log_checking_cert.replace("{url}", &cert_url));
     if certificates::cert_exists(&cert_url) {
-        set_status(&log, &name, InstallStatus::Installing(format!("Certificat {name}")));
+        set_status(&log, &name, InstallStatus::Installing(t.status_certificate.replace("{name}", &name)));
         ctx.request_repaint();
         action(&log, &name, t.log_installing_cert);
         if let Err(e) = certificates::install_certificate(&cert_url, &name, &tmp_dir) {
-            fail!(format!("Certificat: {e}"));
+            fail!(t.err_certificate.replace("{error}", &e.to_string()));
         }
     }
 
@@ -239,7 +239,7 @@ fn install_single(
     }
 
     // ── 5. Shortcuts ──────────────────────────────────────────────────────────
-    set_status(&log, &name, InstallStatus::Installing(format!("Raccourcis {name}")));
+    set_status(&log, &name, InstallStatus::Installing(t.status_shortcuts.replace("{name}", &name)));
     ctx.request_repaint();
     if options.desktop_shortcut {
         action(&log, &name, t.log_creating_desktop);
@@ -282,7 +282,7 @@ fn uninstall_single(
     ctx: Context,
 ) {
     action(&log, &name, t.log_starting_uninstall.replace("{name}", &name));
-    set_status(&log, &name, InstallStatus::Installing(format!("Désinstallation {name}")));
+    set_status(&log, &name, InstallStatus::Installing(t.status_uninstalling.replace("{name}", &name)));
     ctx.request_repaint();
 
     let install_dir = paths::program_files_dir(&name);
@@ -474,7 +474,7 @@ fn download_binary(
         .build()
         .map_err(|e| e.to_string())?;
 
-    let bytes = fetch_bytes(&client, &asset.browser_download_url, name, Some((log, 0)))?;
+    let bytes = fetch_bytes(&client, &asset.browser_download_url, name, Some((log, 0)), t)?;
 
     // Size check
     let expected_size = asset.size;
@@ -483,16 +483,17 @@ fn download_binary(
         "{name}: taille attendue={expected_size} reçue={actual_size}"
     ));
     if expected_size > 0 && actual_size != expected_size {
-        return Err(format!(
-            "{name}: taille incorrecte (attendu {expected_size} o, reçu {actual_size} o)"
-        ));
+        return Err(t.err_size
+            .replace("{name}", name)
+            .replace("{expected}", &expected_size.to_string())
+            .replace("{actual}", &actual_size.to_string()));
     }
     action(log, name, t.log_size_verified.replace("{size}", &human_size(actual_size)));
 
     // SHA-256 check
     if let Some(sha_asset) = sha256_asset {
         action(log, name, t.log_sha256_checking);
-        let sha_bytes = fetch_bytes(&client, &sha_asset.browser_download_url, name, None)?;
+        let sha_bytes = fetch_bytes(&client, &sha_asset.browser_download_url, name, None, t)?;
         let expected_hex = String::from_utf8_lossy(&sha_bytes)
             .split_whitespace().next().unwrap_or("").to_lowercase();
 
@@ -504,9 +505,10 @@ fn download_binary(
             "{name}: SHA-256 attendu={expected_hex} calculé={actual_hex}"
         ));
         if !expected_hex.is_empty() && actual_hex != expected_hex {
-            return Err(format!(
-                "{name}: SHA-256 invalide\n  attendu : {expected_hex}\n  calculé : {actual_hex}"
-            ));
+            return Err(t.err_sha256
+                .replace("{name}", name)
+                .replace("{expected}", &expected_hex)
+                .replace("{actual}", &actual_hex));
         }
         action(log, name, t.log_sha256_ok);
     } else {
@@ -566,15 +568,16 @@ fn fetch_bytes(
     url: &str,
     name: &str,
     progress: Option<(&Log, u64)>,
+    t: &crate::i18n::Translations,
 ) -> Result<Vec<u8>, String> {
     use std::io::Read;
 
     let mut resp = client.get(url).send()
-        .map_err(|e| format!("{name}: connexion ({url}): {e}"))?;
+        .map_err(|e| t.err_connection.replace("{name}", name).replace("{url}", url).replace("{error}", &e.to_string()))?;
     let status = resp.status();
     crate::logger::write("runner", "HTTP", &format!("{name}: GET {url} -> {status}"));
     if !status.is_success() {
-        return Err(format!("{name}: HTTP {status} pour {url}"));
+        return Err(t.err_http.replace("{name}", name).replace("{status}", &status.to_string()).replace("{url}", url));
     }
 
     let content_length = resp.content_length().unwrap_or(0);
@@ -592,7 +595,7 @@ fn fetch_bytes(
                     set_bytes(log, name, downloaded, total);
                 }
             }
-            Err(e) => return Err(format!("{name}: lecture ({url}): {e}")),
+            Err(e) => return Err(t.err_read.replace("{name}", name).replace("{url}", url).replace("{error}", &e.to_string())),
         }
     }
 
