@@ -26,6 +26,7 @@ et le projet respecte le [Versionnage sémantique](https://semver.org/lang/fr/) 
 ### Corrigé
 - Les sliders des cartes de programme ne réagissaient pas au clic.
 - Le logo animé pendant l'installation semblait se dupliquer / s'empiler.
+- Compilation Linux : suppression de code mort qui faisait planter `rustc` 1.94.1.
 
 ## [0.1.0] - 2026-04-28
 
