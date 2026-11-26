@@ -681,6 +681,9 @@ fn remove_shortcut_desktop(app_name: &str) {
 }
 
 fn remove_shortcut_start_menu(app_name: &str) {
+    // Start-menu shortcuts only exist on Windows.
+    #[cfg(not(windows))]
+    let _ = app_name;
     #[cfg(windows)]
     {
         use winreg::enums::*;
