@@ -269,6 +269,10 @@ fn program_card(
                  else { lerp_color(CARD_BORDER_OFF, Color32::from_rgb(80, 80, 100), hover_t) };
 
     let mut action = CardAction::None;
+    // Rect of the pill toggle, captured while laying out the card. The card body
+    // interaction is registered after the content and therefore sits on top of
+    // the pill: clicks are routed manually using this rect.
+    let mut pill_rect = egui::Rect::NOTHING;
 
     let frame_resp = Frame::none()
         .fill(bg)
@@ -319,7 +323,7 @@ fn program_card(
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(2.0);
-                    if draw_pill(ui, selected, danger) { action = CardAction::Toggle; }
+                    pill_rect = draw_pill(ui, selected, danger, Sense::hover()).rect;
                 });
             });
 
@@ -346,9 +350,19 @@ fn program_card(
     let now_hovered = body_resp.hovered();
     ui.data_mut(|d| d.insert_temp(hover_id, now_hovered));
 
+    let pointer = body_resp.interact_pointer_pos().or(body_resp.hover_pos());
+    let over_pill = pointer.map_or(false, |p| pill_rect.expand(4.0).contains(p));
+    if over_pill {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+
     if body_resp.clicked() {
-        expanded = !expanded;
-        ui.data_mut(|d| d.insert_temp(expand_id, expanded));
+        if over_pill {
+            action = CardAction::Toggle;
+        } else {
+            expanded = !expanded;
+            ui.data_mut(|d| d.insert_temp(expand_id, expanded));
+        }
     }
 
     if hover_t > 0.01 && hover_t < 0.99 {
@@ -360,9 +374,9 @@ fn program_card(
 
 // ── Pill toggle ───────────────────────────────────────────────────────────────
 
-fn draw_pill(ui: &mut Ui, on: bool, danger: bool) -> bool {
+fn draw_pill(ui: &mut Ui, on: bool, danger: bool, sense: Sense) -> egui::Response {
     let size = Vec2::new(38.0, 20.0);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
 
     if ui.is_rect_visible(rect) {
         let anim_id = resp.id.with("pill_anim");
@@ -383,7 +397,7 @@ fn draw_pill(ui: &mut Ui, on: bool, danger: bool) -> bool {
         ui.painter().circle_filled(egui::pos2(knob_x, rect.center().y), knob_r, Color32::WHITE);
     }
 
-    resp.clicked()
+    resp
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
@@ -400,7 +414,7 @@ fn badge(ui: &mut Ui, text: &str, fg: Color32, bg: Color32) {
 
 fn toggle_inline(ui: &mut Ui, value: &mut bool, label: &str) {
     ui.horizontal(|ui| {
-        if draw_pill(ui, *value, false) { *value = !*value; }
+        if draw_pill(ui, *value, false, Sense::click()).clicked() { *value = !*value; }
         ui.add_space(4.0);
         ui.label(RichText::new(label).size(12.0).color(Color32::from_rgb(175, 175, 175)));
     });
