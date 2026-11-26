@@ -140,7 +140,8 @@ impl InstallerApp {
             .unwrap_or(false)
         {
             if let Some(handle) = self.load_handle.take() {
-                match handle.join().unwrap_or(Err("Thread paniqué".to_string())) {
+                let t = i18n::get(&self.state.install_options.selected_language);
+                match handle.join().unwrap_or_else(|_| Err(t.err_loading_thread.to_string())) {
                     Ok(loaded) => {
                         logger::write("main", "INFO", &format!(
                             "Chargement OK: {} programme(s), {} langue(s) GitHub",
