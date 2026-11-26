@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cargo init *)",
-      "Bash(cargo check *)",
-      "Bash(cargo fix *)"
-    ]
-  }
-}
