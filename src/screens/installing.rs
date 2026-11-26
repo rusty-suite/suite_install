@@ -285,54 +285,81 @@ fn load_anim_frames(ctx: &egui::Context) -> Vec<AnimFrame> {
 
     if raw_frames.is_empty() { return Vec::new(); }
 
-    // Canvas dimensions from the first frame.
-    let canvas_w = raw_frames[0].buffer().width();
-    let canvas_h = raw_frames[0].buffer().height();
-
-    // Pre-composite delta-encoded WebP frames onto a persistent canvas so each
-    // AnimFrame texture always contains the full, correct image for that moment.
-    let mut canvas = image::RgbaImage::new(canvas_w, canvas_h);
-
+    // The WebP decoder (image >= 0.25 / image-webp) already returns every frame
+    // as a fully composited canvas, with blending and disposal applied. Each
+    // frame is therefore uploaded as-is: compositing it again over the previous
+    // frame would keep old pixels behind transparent areas and make the logo
+    // appear stacked / duplicated.
     raw_frames.into_iter().enumerate().map(|(i, frame)| {
         let (num, den) = frame.delay().numer_denom_ms();
         let delay_s = if num == 0 || den == 0 { 0.08 }
                       else { (num as f64 / den as f64 / 1000.0).max(0.016) };
 
-        // Frame offset within the canvas (WebP supports partial-frame updates).
-        let left = frame.left();
-        let top  = frame.top();
         let buf  = frame.into_buffer();
-
-        for (fx, fy, src) in buf.enumerate_pixels() {
-            let cx = left + fx;
-            let cy = top  + fy;
-            if cx >= canvas_w || cy >= canvas_h { continue; }
-            let sa = src[3];
-            if sa == 0 { continue; } // transparent pixel — keep canvas
-            if sa == 255 {
-                canvas.put_pixel(cx, cy, *src);
-            } else {
-                // src-over alpha compositing for semi-transparent pixels
-                let dst   = canvas.get_pixel(cx, cy);
-                let sa_f  = sa as f32 / 255.0;
-                let da_f  = dst[3] as f32 / 255.0;
-                let out_a = sa_f + da_f * (1.0 - sa_f);
-                let blend = |s: u8, d: u8| -> u8 {
-                    if out_a < 0.001 { return 0; }
-                    ((s as f32 * sa_f + d as f32 * da_f * (1.0 - sa_f)) / out_a) as u8
-                };
-                canvas.put_pixel(cx, cy, image::Rgba([
-                    blend(src[0], dst[0]),
-                    blend(src[1], dst[1]),
-                    blend(src[2], dst[2]),
-                    (out_a * 255.0).min(255.0) as u8,
-                ]));
-            }
-        }
-
-        let size = [canvas_w as usize, canvas_h as usize];
-        let img  = egui::ColorImage::from_rgba_unmultiplied(size, canvas.as_raw());
+        let size = [buf.width() as usize, buf.height() as usize];
+        let img  = egui::ColorImage::from_rgba_unmultiplied(size, buf.as_raw());
         let handle = ctx.load_texture(format!("anim_{i}"), img, egui::TextureOptions::LINEAR);
         AnimFrame { handle, delay_s }
     }).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decoded() -> Vec<image::Frame> {
+        let dec = image::codecs::webp::WebPDecoder::new(BufReader::new(Cursor::new(INSTALL_IMAGE))).unwrap();
+        dec.into_frames().collect_frames().unwrap()
+    }
+
+    #[test]
+    fn decoder_returns_full_canvas_frames() {
+        let frames = decoded();
+        assert!(frames.len() > 1, "animation expected");
+        let (w, h) = (frames[0].buffer().width(), frames[0].buffer().height());
+        for f in &frames {
+            assert_eq!((f.left(), f.top()), (0, 0));
+            assert_eq!((f.buffer().width(), f.buffer().height()), (w, h));
+        }
+    }
+
+    #[test]
+    fn textures_match_decoded_frames() {
+        let ctx = egui::Context::default();
+        let frames = load_anim_frames(&ctx);
+        let raw = decoded();
+        assert_eq!(frames.len(), raw.len());
+        let size = [raw[0].buffer().width() as usize, raw[0].buffer().height() as usize];
+        for f in &frames {
+            assert_eq!(f.handle.size(), size);
+            assert!(f.delay_s > 0.0);
+        }
+    }
+
+    /// Replays the former algorithm (src-over compositing of every decoded
+    /// frame onto a persistent canvas) and counts pixels that differ from the
+    /// decoder output: any difference is an artefact of previous frames.
+    #[test]
+    fn old_compositing_differs_from_decoder() {
+        let raw = decoded();
+        let (w, h) = (raw[0].buffer().width(), raw[0].buffer().height());
+        let mut canvas = image::RgbaImage::new(w, h);
+        let (mut diff, mut partial) = (0u64, 0u64);
+        for f in &raw {
+            for (x, y, src) in f.buffer().enumerate_pixels() {
+                let sa = src[3];
+                if sa == 0 { continue; }
+                if sa == 255 { canvas.put_pixel(x, y, *src); continue; }
+                partial += 1;
+                let dst = *canvas.get_pixel(x, y);
+                let (sa_f, da_f) = (sa as f32 / 255.0, dst[3] as f32 / 255.0);
+                let out_a = sa_f + da_f * (1.0 - sa_f);
+                let bl = |s: u8, d: u8| ((s as f32 * sa_f + d as f32 * da_f * (1.0 - sa_f)) / out_a) as u8;
+                canvas.put_pixel(x, y, image::Rgba([bl(src[0], dst[0]), bl(src[1], dst[1]), bl(src[2], dst[2]), (out_a * 255.0) as u8]));
+            }
+            diff += f.buffer().pixels().zip(canvas.pixels())
+                .filter(|(a, b)| a.0.iter().zip(b.0.iter()).any(|(x, y)| x.abs_diff(*y) > 8)).count() as u64;
+        }
+        println!("[anim] {} frames {}x{}, semi-transparent px: {}, px altered by old method: {}", raw.len(), w, h, partial, diff);
+    }
 }

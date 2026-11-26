@@ -35,6 +35,7 @@ pub struct Translations {
     /// Template: {n}
     pub install_n_programs:     &'static str,
     pub no_programs_installed:  &'static str,
+    pub no_programs_available:  &'static str,
     pub uninstall_warning:      &'static str,
     /// Template: {n}
     pub uninstall_n_programs:   &'static str,
@@ -197,6 +198,7 @@ and accepted all of these terms.
     no_language_available: "No language available",
     install_n_programs:    "Install {n} program(s)",
     no_programs_installed: "No Rusty Suite program is installed.",
+    no_programs_available: "No program currently has a release available for download.",
     uninstall_warning:     "Uninstalling permanently deletes files, data and shortcuts.",
     uninstall_n_programs:  "Uninstall {n} program(s)",
 
@@ -332,6 +334,7 @@ et accepté l'intégralité des présentes conditions.
     no_language_available: "Aucune langue disponible",
     install_n_programs:    "Installer {n} programme(s)",
     no_programs_installed: "Aucun programme Rusty Suite n'est installé.",
+    no_programs_available: "Aucun programme n'a actuellement de release disponible au téléchargement.",
     uninstall_warning:     "La désinstallation supprime définitivement les fichiers, données et raccourcis.",
     uninstall_n_programs:  "Désinstaller {n} programme(s)",
 
@@ -467,6 +470,7 @@ diese Bedingungen gelesen, verstanden und akzeptiert haben.
     no_language_available: "Keine Sprache verfügbar",
     install_n_programs:    "{n} Programm(e) installieren",
     no_programs_installed: "Kein Rusty Suite-Programm ist installiert.",
+    no_programs_available: "Derzeit hat kein Programm ein herunterladbares Release.",
     uninstall_warning:     "Die Deinstallation löscht Dateien, Daten und Verknüpfungen dauerhaft.",
     uninstall_n_programs:  "{n} Programm(e) deinstallieren",
 
@@ -602,6 +606,7 @@ e accettato integralmente queste condizioni.
     no_language_available: "Nessuna lingua disponibile",
     install_n_programs:    "Installa {n} programma/i",
     no_programs_installed: "Nessun programma Rusty Suite è installato.",
+    no_programs_available: "Nessun programma ha attualmente una release disponibile per il download.",
     uninstall_warning:     "La disinstallazione elimina definitivamente i file, i dati e le scorciatoie.",
     uninstall_n_programs:  "Disinstalla {n} programma/i",
 

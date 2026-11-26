@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const ORG: &str = "rusty-suite";
 const API_BASE: &str = "https://api.github.com";
-const USER_AGENT: &str = "suite_install/0.1";
+const USER_AGENT: &str = concat!("suite_install/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GithubRepo {
@@ -104,7 +104,12 @@ pub fn fetch_latest_release(repo: &str) -> anyhow::Result<Option<GithubRelease>>
     }
 
     let releases: Vec<GithubRelease> = decode_json_response(resp2, &list_url)?;
-    let release = releases.into_iter().find(|r| !r.draft);
+    // Prefer a stable release; fall back to a pre-release only if nothing else exists.
+    let mut candidates: Vec<GithubRelease> = releases.into_iter().filter(|r| !r.draft).collect();
+    let release = match candidates.iter().position(|r| !r.prerelease) {
+        Some(i) => Some(candidates.swap_remove(i)),
+        None => candidates.into_iter().next(),
+    };
 
     match &release {
         Some(r) => crate::logger::write("github", "INFO", &format!(
@@ -116,6 +121,68 @@ pub fn fetch_latest_release(repo: &str) -> anyhow::Result<Option<GithubRelease>>
     }
 
     Ok(release)
+}
+
+/// Picks the most suitable Windows binary among the release assets.
+pub fn pick_windows_asset(assets: &[ReleaseAsset]) -> Option<&ReleaseAsset> {
+    let is_checksum =
+        |n: &str| n.ends_with(".sha256") || n.ends_with(".sha256sum") || n.ends_with(".md5");
+
+    assets.iter()
+        .filter(|a| !is_checksum(&a.name))
+        .filter_map(|a| {
+            let n = a.name.to_lowercase();
+            let mut score: i32 = 0;
+
+            if n.ends_with(".exe")      { score += 4; }
+            else if n.ends_with(".msi") { score += 3; }
+            else if n.ends_with(".zip") { score += 2; }
+
+            if n.contains("windows") || n.contains("win") { score += 6; }
+            if n.contains("x86_64") || n.contains("x64") || n.contains("amd64") { score += 8; }
+
+            if n.contains("linux") || n.contains("darwin") || n.contains("macos") || n.contains("mac-") {
+                score -= 20;
+            }
+
+            if score > -10 { Some((a, score)) } else { None }
+        })
+        .max_by_key(|(_, s)| *s)
+        .map(|(a, _)| a)
+}
+
+/// Checks that a release really offers an installable Windows binary:
+/// a matching asset exists, is not empty, and its download URL answers.
+/// Returns `Err(reason)` describing why the release is not installable.
+pub fn verify_release_installable(repo: &str, release: &GithubRelease) -> Result<(), String> {
+    let asset = pick_windows_asset(&release.assets)
+        .ok_or_else(|| format!("aucun asset Windows dans la release {}", release.tag_name))?;
+
+    if asset.size == 0 {
+        return Err(format!("asset '{}' vide", asset.name));
+    }
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    crate::logger::write("github", "INFO", &format!("HEAD {}", asset.browser_download_url));
+    let resp = client
+        .head(&asset.browser_download_url)
+        .send()
+        .map_err(|e| format!("asset '{}' injoignable: {e}", asset.name))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("asset '{}' indisponible (HTTP {status})", asset.name));
+    }
+
+    crate::logger::write("github", "INFO", &format!(
+        "{repo}: release {} verifiee, asset '{}' disponible", release.tag_name, asset.name
+    ));
+    Ok(())
 }
 
 /// HEAD request to api.github.com to verify connectivity. Returns latency in ms.
@@ -246,4 +313,76 @@ fn body_excerpt(body: &str) -> String {
         excerpt.push_str("...");
     }
     excerpt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asset(name: &str, size: u64) -> ReleaseAsset {
+        ReleaseAsset { name: name.into(), browser_download_url: String::new(), size }
+    }
+
+    #[test]
+    fn picks_windows_binary_over_other_platforms() {
+        let assets = vec![
+            asset("app-linux-x86_64", 10),
+            asset("app-macos.zip", 10),
+            asset("app-windows-x86_64.exe", 10),
+            asset("app-windows-x86_64.exe.sha256", 1),
+        ];
+        assert_eq!(pick_windows_asset(&assets).unwrap().name, "app-windows-x86_64.exe");
+    }
+
+    #[test]
+    fn no_windows_binary_means_none() {
+        let assets = vec![asset("app-linux-x86_64", 10), asset("app.sha256", 1)];
+        assert!(pick_windows_asset(&assets).is_none());
+        assert!(pick_windows_asset(&[]).is_none());
+    }
+
+    #[test]
+    fn release_without_windows_asset_is_not_installable() {
+        let rel = GithubRelease { tag_name: "v1".into(), assets: vec![asset("app-linux", 5)], draft: false, prerelease: false };
+        assert!(verify_release_installable("x", &rel).is_err());
+    }
+
+    #[test]
+    fn empty_asset_is_not_installable() {
+        let rel = GithubRelease { tag_name: "v1".into(), assets: vec![asset("app.exe", 0)], draft: false, prerelease: false };
+        assert!(verify_release_installable("x", &rel).is_err());
+    }
+
+    /// Network test against the real organisation: run with `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_check_all_repos() {
+        let repos = fetch_org_repos().expect("repo list");
+        assert!(!repos.is_empty());
+        for repo in repos {
+            let rel = fetch_latest_release(&repo.name).expect("release request");
+            let verdict = match &rel {
+                Some(r) => verify_release_installable(&repo.name, r).map(|_| format!("OK ({})", r.tag_name)),
+                None => Err("aucune release".to_string()),
+            };
+            println!("[live] {:<24} -> {:?}", repo.name, verdict);
+        }
+    }
+
+    /// Network test: a missing download URL must be rejected.
+    #[test]
+    #[ignore]
+    fn live_missing_asset_is_rejected() {
+        let rel = GithubRelease {
+            tag_name: "v0.0.0".into(),
+            assets: vec![ReleaseAsset {
+                name: "app-windows-x86_64.exe".into(),
+                browser_download_url: format!("https://github.com/{ORG}/suite_install/releases/download/does-not-exist/none.exe"),
+                size: 10,
+            }],
+            draft: false,
+            prerelease: false,
+        };
+        assert!(verify_release_installable("suite_install", &rel).is_err());
+    }
 }
