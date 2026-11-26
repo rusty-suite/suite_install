@@ -290,6 +290,11 @@ fn load_anim_frames(ctx: &egui::Context) -> Vec<AnimFrame> {
     // frame is therefore uploaded as-is: compositing it again over the previous
     // frame would keep old pixels behind transparent areas and make the logo
     // appear stacked / duplicated.
+    //
+    // The asset itself must also be exported with "no blending" on every
+    // frame: each frame is a full 800x800 picture, and with alpha blending
+    // enabled the decoder (correctly) draws it over the previous ones, which
+    // produces the same cascade. See `asset_frames_do_not_blend` below.
     raw_frames.into_iter().enumerate().map(|(i, frame)| {
         let (num, den) = frame.delay().numer_denom_ms();
         let delay_s = if num == 0 || den == 0 { 0.08 }
@@ -334,6 +339,37 @@ mod tests {
             assert_eq!(f.handle.size(), size);
             assert!(f.delay_s > 0.0);
         }
+    }
+
+    /// Reads the blending flag of every ANMF chunk of the embedded WebP.
+    /// Returns `(frame_count, frames_with_alpha_blending)`.
+    fn anmf_blend_flags(data: &[u8]) -> (usize, usize) {
+        let (mut count, mut blending) = (0, 0);
+        let mut pos = 12; // skip "RIFF" + size + "WEBP"
+        while pos + 8 <= data.len() {
+            let id = &data[pos..pos + 4];
+            let size = u32::from_le_bytes(data[pos + 4..pos + 8].try_into().unwrap()) as usize;
+            if id == b"ANMF" {
+                count += 1;
+                // Byte 15 of the ANMF payload: bit 1 = "do not blend".
+                if data[pos + 8 + 15] & 0b10 == 0 {
+                    blending += 1;
+                }
+            }
+            pos += 8 + size + (size & 1); // chunks are padded to an even size
+        }
+        (count, blending)
+    }
+
+    /// Every frame of the asset is a complete picture: if a frame is alpha
+    /// blended over the previous one, transparent edges keep old pixels and
+    /// the logo looks duplicated. Guards against a future re-export with the
+    /// wrong settings.
+    #[test]
+    fn asset_frames_do_not_blend() {
+        let (count, blending) = anmf_blend_flags(INSTALL_IMAGE);
+        assert!(count > 1, "animated WebP expected");
+        assert_eq!(blending, 0, "{blending}/{count} frames use alpha blending; re-export with no blending");
     }
 
     /// Replays the former algorithm (src-over compositing of every decoded
