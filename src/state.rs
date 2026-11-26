@@ -25,6 +25,8 @@ pub struct ProgramEntry {
     /// "langue" or "lang" — whichever folder was found in the repo
     pub lang_folder: String,
     pub selected: bool,
+    /// true when a published release with a downloadable Windows binary was verified
+    pub installable: bool,
     pub installed_version: Option<String>,
     pub needs_update: bool,
 }

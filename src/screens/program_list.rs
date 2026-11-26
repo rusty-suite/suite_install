@@ -63,13 +63,27 @@ fn show_install_tab(ui: &mut Ui, state: &mut AppState, t: &Translations) -> bool
         eprintln!("[suite_install][program_list][INFO] langue réinitialisée -> {}", all_langs[0]);
     }
 
+    // Only programs with a verified, downloadable release are offered for install.
+    if !state.programs.iter().any(|p| p.installable) {
+        ui.add_space(50.0);
+        ui.vertical_centered(|ui| {
+            ui.label(RichText::new(t.no_programs_available)
+                .color(Color32::from_rgb(110, 110, 110)).size(14.0));
+        });
+        return false;
+    }
+
     // Quick-select toolbar
     ui.horizontal(|ui| {
-        small_btn(ui, t.select_all,   || state.programs.iter_mut().for_each(|p| p.selected = true));
-        small_btn(ui, t.deselect_all, || state.programs.iter_mut().for_each(|p| p.selected = false));
+        small_btn(ui, t.select_all, || {
+            state.programs.iter_mut().filter(|p| p.installable).for_each(|p| p.selected = true);
+        });
+        small_btn(ui, t.deselect_all, || {
+            state.programs.iter_mut().filter(|p| p.installable).for_each(|p| p.selected = false);
+        });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let n     = state.programs.iter().filter(|p| p.selected).count();
-            let total = state.programs.len();
+            let n     = state.programs.iter().filter(|p| p.installable && p.selected).count();
+            let total = state.programs.iter().filter(|p| p.installable).count();
             let label = t.n_selected
                 .replace("{n}",     &n.to_string())
                 .replace("{total}", &total.to_string());
@@ -87,6 +101,7 @@ fn show_install_tab(ui: &mut Ui, state: &mut AppState, t: &Translations) -> bool
             ui.set_min_width(ui.available_width());
             let n = state.programs.len();
             for idx in 0..n {
+                if !state.programs[idx].installable { continue; }
                 let name      = state.programs[idx].repo.name.clone();
                 let desc      = state.programs[idx].repo.description.clone().unwrap_or_default();
                 let inst_ver  = state.programs[idx].installed_version.clone();
@@ -138,7 +153,7 @@ fn show_install_tab(ui: &mut Ui, state: &mut AppState, t: &Translations) -> bool
 
     ui.add_space(10.0);
 
-    let selected = state.programs.iter().filter(|p| p.selected).count();
+    let selected = state.programs.iter().filter(|p| p.installable && p.selected).count();
     let can      = selected > 0; // a language is always available (base languages compiled in)
     let label = if selected == 0 {
         t.no_program_selected.to_string()

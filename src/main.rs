@@ -148,9 +148,10 @@ impl InstallerApp {
                         ));
                         for p in &loaded.programs {
                             logger::write("main", "INFO", &format!(
-                                "  programme='{}' release={} langues={:?}",
+                                "  programme='{}' release={} installable={} langues={:?}",
                                 p.repo.name,
                                 p.release.as_ref().map(|r| r.tag_name.as_str()).unwrap_or("NONE"),
+                                p.installable,
                                 p.languages
                             ));
                         }
@@ -185,7 +186,7 @@ impl InstallerApp {
             .state
             .programs
             .iter()
-            .filter(|p| p.selected)
+            .filter(|p| p.selected && p.installable)
             .map(|p| {
                 (
                     p.repo.name.clone(),
@@ -347,7 +348,26 @@ fn load_programs() -> Result<LoadedPrograms, String> {
     let mut all_languages: BTreeSet<String> = BTreeSet::new();
 
     for repo in repos {
-        let release = github::fetch_latest_release(&repo.name).ok().flatten();
+        let release = match github::fetch_latest_release(&repo.name) {
+            Ok(r) => r,
+            Err(e) => {
+                logger::write("main", "WARN", &format!("{}: lecture release impossible: {e}", repo.name));
+                None
+            }
+        };
+        let installable = match &release {
+            Some(rel) => match github::verify_release_installable(&repo.name, rel) {
+                Ok(()) => true,
+                Err(reason) => {
+                    logger::write("main", "WARN", &format!("{}: non installable - {reason}", repo.name));
+                    false
+                }
+            },
+            None => {
+                logger::write("main", "WARN", &format!("{}: aucune release publiee", repo.name));
+                false
+            }
+        };
         let (languages, lang_folder) = github::fetch_language_files(&repo.name, &repo.default_branch)
             .unwrap_or_else(|e| {
                 eprintln!("[suite_install][load][WARN] {}: fetch langue impossible: {e}", repo.name);
@@ -361,7 +381,7 @@ fn load_programs() -> Result<LoadedPrograms, String> {
         let installed = paths::read_install_record(&repo.name);
         let installed_version = installed.as_ref().map(|r| r.version.clone());
         let needs_update = match (&installed_version, &release) {
-            (Some(iv), Some(rel)) => iv != &rel.tag_name,
+            (Some(iv), Some(rel)) => installable && iv != &rel.tag_name,
             _ => false,
         };
 
@@ -370,7 +390,8 @@ fn load_programs() -> Result<LoadedPrograms, String> {
             release,
             languages,
             lang_folder,
-            selected: true,
+            selected: installable,
+            installable,
             installed_version,
             needs_update,
         });

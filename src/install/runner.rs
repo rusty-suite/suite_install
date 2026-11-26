@@ -1,4 +1,4 @@
-use crate::github::{self, GithubRelease, ReleaseAsset};
+use crate::github::{self, GithubRelease};
 use crate::install::{certificates, paths, shortcuts};
 use crate::state::{InstallLogEntry, InstallOptions, InstallStatus};
 use egui::Context;
@@ -370,13 +370,13 @@ fn run_precheck(programs: &[ProgramInstall], log: &Log, t: &crate::i18n::Transla
     // 2. Total download size — also seed bytes_total per program so the progress bar works
     let total_bytes: u64 = programs.iter()
         .filter_map(|(_, release, _, _, _)| release.as_ref())
-        .filter_map(|r| pick_windows_asset(&r.assets))
+        .filter_map(|r| github::pick_windows_asset(&r.assets))
         .map(|a| a.size)
         .sum();
 
     for (prog_name, release, _, _, _) in programs {
         if let Some(rel) = release {
-            if let Some(asset) = pick_windows_asset(&rel.assets) {
+            if let Some(asset) = github::pick_windows_asset(&rel.assets) {
                 set_bytes(log, prog_name, 0, asset.size);
             }
         }
@@ -431,7 +431,7 @@ fn download_binary(
                 action(log, name, &msg);
                 crate::logger::write("runner", "INFO", &format!("{name}: {msg}"));
                 // Mark as fully downloaded for the progress bar.
-                if let Some(asset) = pick_windows_asset(&release.assets) {
+                if let Some(asset) = github::pick_windows_asset(&release.assets) {
                     set_bytes(log, name, asset.size, asset.size);
                 }
                 return Ok(exe);
@@ -439,7 +439,7 @@ fn download_binary(
         }
     }
 
-    let asset = pick_windows_asset(&release.assets)
+    let asset = github::pick_windows_asset(&release.assets)
         .ok_or_else(|| format!("{name}: {}", t.log_no_windows_asset))?;
 
     let sha256_asset = release.assets.iter().find(|a| {
@@ -526,33 +526,6 @@ fn download_binary(
     };
 
     Ok(exe_path)
-}
-
-fn pick_windows_asset(assets: &[ReleaseAsset]) -> Option<&ReleaseAsset> {
-    let is_checksum =
-        |n: &str| n.ends_with(".sha256") || n.ends_with(".sha256sum") || n.ends_with(".md5");
-
-    assets.iter()
-        .filter(|a| !is_checksum(&a.name))
-        .filter_map(|a| {
-            let n = a.name.to_lowercase();
-            let mut score: i32 = 0;
-
-            if n.ends_with(".exe")      { score += 4; }
-            else if n.ends_with(".msi") { score += 3; }
-            else if n.ends_with(".zip") { score += 2; }
-
-            if n.contains("windows") || n.contains("win") { score += 6; }
-            if n.contains("x86_64") || n.contains("x64") || n.contains("amd64") { score += 8; }
-
-            if n.contains("linux") || n.contains("darwin") || n.contains("macos") || n.contains("mac-") {
-                score -= 20;
-            }
-
-            if score > -10 { Some((a, score)) } else { None }
-        })
-        .max_by_key(|(_, s)| *s)
-        .map(|(a, _)| a)
 }
 
 // ── Speed test helpers ────────────────────────────────────────────────────────
