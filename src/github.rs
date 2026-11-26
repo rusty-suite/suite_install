@@ -314,3 +314,75 @@ fn body_excerpt(body: &str) -> String {
     }
     excerpt
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asset(name: &str, size: u64) -> ReleaseAsset {
+        ReleaseAsset { name: name.into(), browser_download_url: String::new(), size }
+    }
+
+    #[test]
+    fn picks_windows_binary_over_other_platforms() {
+        let assets = vec![
+            asset("app-linux-x86_64", 10),
+            asset("app-macos.zip", 10),
+            asset("app-windows-x86_64.exe", 10),
+            asset("app-windows-x86_64.exe.sha256", 1),
+        ];
+        assert_eq!(pick_windows_asset(&assets).unwrap().name, "app-windows-x86_64.exe");
+    }
+
+    #[test]
+    fn no_windows_binary_means_none() {
+        let assets = vec![asset("app-linux-x86_64", 10), asset("app.sha256", 1)];
+        assert!(pick_windows_asset(&assets).is_none());
+        assert!(pick_windows_asset(&[]).is_none());
+    }
+
+    #[test]
+    fn release_without_windows_asset_is_not_installable() {
+        let rel = GithubRelease { tag_name: "v1".into(), assets: vec![asset("app-linux", 5)], draft: false, prerelease: false };
+        assert!(verify_release_installable("x", &rel).is_err());
+    }
+
+    #[test]
+    fn empty_asset_is_not_installable() {
+        let rel = GithubRelease { tag_name: "v1".into(), assets: vec![asset("app.exe", 0)], draft: false, prerelease: false };
+        assert!(verify_release_installable("x", &rel).is_err());
+    }
+
+    /// Network test against the real organisation: run with `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_check_all_repos() {
+        let repos = fetch_org_repos().expect("repo list");
+        assert!(!repos.is_empty());
+        for repo in repos {
+            let rel = fetch_latest_release(&repo.name).expect("release request");
+            let verdict = match &rel {
+                Some(r) => verify_release_installable(&repo.name, r).map(|_| format!("OK ({})", r.tag_name)),
+                None => Err("aucune release".to_string()),
+            };
+            println!("[live] {:<24} -> {:?}", repo.name, verdict);
+        }
+    }
+
+    /// Network test: a missing download URL must be rejected.
+    #[test]
+    #[ignore]
+    fn live_missing_asset_is_rejected() {
+        let rel = GithubRelease {
+            tag_name: "v0.0.0".into(),
+            assets: vec![ReleaseAsset {
+                name: "app-windows-x86_64.exe".into(),
+                browser_download_url: format!("https://github.com/{ORG}/suite_install/releases/download/does-not-exist/none.exe"),
+                size: 10,
+            }],
+            draft: false,
+            prerelease: false,
+        };
+        assert!(verify_release_installable("suite_install", &rel).is_err());
+    }
+}
