@@ -250,7 +250,7 @@ fn show_uninstall_tab(ui: &mut Ui, state: &mut AppState, t: &Translations) -> bo
 
 // ── Card widget ───────────────────────────────────────────────────────────────
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum CardAction { None, Toggle }
 
 fn program_card(
@@ -339,6 +339,8 @@ fn program_card(
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(2.0);
                     pill_rect = draw_pill(ui, selected, danger, Sense::hover()).rect;
+                    #[cfg(test)]
+                    ui.data_mut(|d| d.insert_temp(card_id.with("pill_rect"), pill_rect));
                 });
             });
 
@@ -484,4 +486,72 @@ fn language_label(file_name: &str) -> String {
         .or_else(|| file_name.strip_suffix(".toml"))
         .unwrap_or(file_name)
         .replace('_', "-")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::{pos2, Event, PointerButton, Pos2, RawInput, Rect};
+
+    const NAME: &str = "demo_app";
+
+    fn input(events: Vec<Event>) -> RawInput {
+        RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(760.0, 580.0))),
+            events,
+            ..Default::default()
+        }
+    }
+
+    /// Renders one card and returns its action.
+    fn frame(ctx: &egui::Context, events: Vec<Event>, selected: bool) -> CardAction {
+        let t = crate::i18n::get("FR_fr.toml");
+        let mut action = CardAction::None;
+        let _ = ctx.run(input(events), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                action = program_card(ui, NAME, "desc", None, Some("1.0.0"), "", false, false, selected, false, t);
+            });
+        });
+        action
+    }
+
+    fn click_at(ctx: &egui::Context, p: Pos2, selected: bool) -> CardAction {
+        let press = Event::PointerButton { pos: p, button: PointerButton::Primary, pressed: true, modifiers: Default::default() };
+        let release = Event::PointerButton { pos: p, button: PointerButton::Primary, pressed: false, modifiers: Default::default() };
+        let a1 = frame(ctx, vec![Event::PointerMoved(p)], selected);
+        let a2 = frame(ctx, vec![press], selected);
+        let a3 = frame(ctx, vec![release], selected);
+        let a4 = frame(ctx, vec![], selected);
+        [a1, a2, a3, a4].into_iter().find(|a| *a == CardAction::Toggle).unwrap_or(CardAction::None)
+    }
+
+    fn pill_rect(ctx: &egui::Context) -> Rect {
+        let id = Id::new("card").with(NAME).with("pill_rect");
+        ctx.data(|d| d.get_temp::<Rect>(id)).expect("pill rect not recorded")
+    }
+
+    fn expanded(ctx: &egui::Context) -> bool {
+        let id = Id::new("card").with(NAME).with("expand");
+        ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false)
+    }
+
+    #[test]
+    fn click_on_pill_toggles_selection() {
+        let ctx = egui::Context::default();
+        frame(&ctx, vec![], true);
+        let pill = pill_rect(&ctx);
+        assert!(pill.width() > 0.0);
+        assert_eq!(click_at(&ctx, pill.center(), true), CardAction::Toggle);
+        assert!(!expanded(&ctx), "clicking the pill must not expand the card");
+    }
+
+    #[test]
+    fn click_on_card_body_expands_without_toggling() {
+        let ctx = egui::Context::default();
+        frame(&ctx, vec![], false);
+        let pill = pill_rect(&ctx);
+        let body_point = pos2(pill.left() - 200.0, pill.center().y);
+        assert_eq!(click_at(&ctx, body_point, false), CardAction::None);
+        assert!(expanded(&ctx), "clicking the body must expand the card");
+    }
 }
