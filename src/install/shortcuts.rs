@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 use anyhow::Result;
 
 pub fn create_desktop_shortcut(app_name: &str, exe_path: &Path) -> Result<()> {
@@ -8,6 +10,9 @@ pub fn create_desktop_shortcut(app_name: &str, exe_path: &Path) -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("Cannot find desktop folder"))?;
         create_lnk(&desktop.join(format!("{}.lnk", app_name)), exe_path)?;
     }
+    // Shortcuts are only implemented for Windows (.lnk) at the moment.
+    #[cfg(not(windows))]
+    let _ = (app_name, exe_path);
     Ok(())
 }
 
@@ -19,6 +24,9 @@ pub fn create_start_menu_shortcut(app_name: &str, exe_path: &Path) -> Result<()>
         std::fs::create_dir_all(&folder)?;
         create_lnk(&folder.join(format!("{}.lnk", app_name)), exe_path)?;
     }
+    // Shortcuts are only implemented for Windows (.lnk) at the moment.
+    #[cfg(not(windows))]
+    let _ = (app_name, exe_path);
     Ok(())
 }
 
