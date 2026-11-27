@@ -9,7 +9,7 @@ pub struct Translations {
     pub other_languages:        &'static str,
     pub continue_btn:           &'static str,
 
-    // ── EULA screen ───────────────────────────────────────────────────────────
+    // ── Licence / terms screen (GPL) ─────────────────────────────────────────────────────
     pub eula_title:             &'static str,
     pub eula_text:              &'static str,
     pub eula_accept_label:      &'static str,
@@ -142,31 +142,30 @@ static EN: Translations = Translations {
     other_languages:       "Other available languages",
     continue_btn:          "Continue →",
 
-    eula_title:            "End User License Agreement",
+    eula_title:            "Licence and terms of use",
     eula_text:             "\
-END USER LICENSE AGREEMENT — RUSTY SUITE
-==========================================
+LICENCE AND TERMS OF USE — RUSTY SUITE
+========================================
 
-By installing this software, you accept the following terms:
+1. LICENCE
+   Rusty Suite programs and this installer are free software, © rusty-suite,
+   distributed under the GNU General Public License, version 3 or (at your
+   option) any later version (GPL-3.0-or-later).
+   You may use, study, share and modify them under the terms of that licence:
+   https://www.gnu.org/licenses/gpl-3.0.html
 
-1. RIGHTS & INTELLECTUAL PROPERTY
-   All Rusty Suite programs are the exclusive property of rusty-suite.com.
-   Any unauthorised reproduction, redistribution or modification is strictly prohibited.
+2. RESPONSIBLE USE
+   You remain responsible for using the programs in compliance with the
+   applicable law. This reminder does not restrict the rights granted by the GPL.
 
-2. PERMITTED USE
-   The programs are provided for legal and ethical purposes only.
-   Any use for illegal, malicious, harmful purposes or contrary to applicable law
-   is strictly prohibited.
-
-3. LIMITATION OF LIABILITY
-   The author (rusty-suite.com) disclaims all liability for any direct
-   or indirect damage caused by the use of the installed programs.
-   You use this software at your own risk.
+3. NO WARRANTY
+   As stated in the GPL, the programs are provided \u{ab}as is\u{bb}, without any
+   warranty. To the extent permitted by law, the authors are not liable for any
+   direct or indirect damage arising from their use.
 
 4. THIRD-PARTY LICENCES
-   Each program may include libraries under separate open-source licences.
-   By installing a program, you also accept the licence terms of each
-   of these libraries, available in the corresponding repositories on GitHub.
+   Each program includes libraries published under their own open-source
+   licences (MIT, Apache-2.0, ...), listed in the corresponding GitHub repository.
 
 5. DATA PROTECTION (GDPR)
    \u{2713} No personal data is collected, transmitted or stored by this installer
@@ -183,12 +182,11 @@ By installing this software, you accept the following terms:
 
 7. UPDATES
    This installer may offer updates to installed programs.
-   These updates are subject to the same licence terms.
+   Updates are distributed under the same licence.
 
-By clicking \u{ab}Accept and continue\u{bb}, you confirm that you have read, understood
-and accepted all of these terms.
+By clicking \u{ab}Accept and continue\u{bb}, you confirm that you have read these terms.
 ",
-    eula_accept_label:     "I have read and accept the terms of the license agreement",
+    eula_accept_label:     "I have read and accept these terms",
     accept_btn:            "Accept and continue \u{2192}",
     cancel_btn:            "Cancel",
 
@@ -286,53 +284,52 @@ static FR: Translations = Translations {
     other_languages:       "Autres langues disponibles",
     continue_btn:          "Continuer \u{2192}",
 
-    eula_title:            "Contrat de Licence Utilisateur Final",
+    eula_title:            "Licence et conditions d'utilisation",
     eula_text:             "\
-CONTRAT DE LICENCE UTILISATEUR FINAL — RUSTY SUITE
-=====================================================
+LICENCE ET CONDITIONS D'UTILISATION — RUSTY SUITE
+===================================================
 
-En installant ce logiciel, vous acceptez les conditions suivantes :
+1. LICENCE
+   Les programmes de la Rusty Suite et cet installeur sont des logiciels libres,
+   © rusty-suite, distribués sous la Licence publique générale GNU, version 3 ou
+   (à votre choix) toute version ultérieure (GPL-3.0-or-later).
+   Vous pouvez les utiliser, les étudier, les partager et les modifier selon les
+   termes de cette licence : https://www.gnu.org/licenses/gpl-3.0.html
 
-1. DROITS & PROPRIÉTÉ INTELLECTUELLE
-   Tous les programmes de la Rusty Suite sont la propriété exclusive de rusty-suite.com.
-   Toute reproduction, redistribution ou modification non autorisée est strictement interdite.
+2. UTILISATION RESPONSABLE
+   Vous restez responsable d'utiliser les programmes conformément à la loi
+   applicable. Ce rappel ne restreint pas les droits accordés par la GPL.
 
-2. UTILISATION AUTORISÉE
-   Les programmes sont fournis à des fins légales et éthiques uniquement.
-   Toute utilisation à des fins illégales, malveillantes, nuisibles ou contraires
-   à la législation en vigueur est formellement interdite.
-
-3. LIMITATION DE RESPONSABILITÉ
-   L'auteur (rusty-suite.com) décline toute responsabilité pour tout dommage direct
-   ou indirect causé par l'utilisation des programmes installés.
-   Vous utilisez ces logiciels à vos propres risques.
+3. ABSENCE DE GARANTIE
+   Comme le prévoit la GPL, les programmes sont fournis \u{ab} tels quels \u{bb}, sans
+   aucune garantie. Dans les limites permises par la loi, les auteurs déclinent
+   toute responsabilité pour les dommages directs ou indirects liés à leur usage.
 
 4. LICENCES TIERCES
-   Chaque programme peut inclure des bibliothèques sous licences open source distinctes.
-   En installant un programme, vous acceptez également les termes de licence de chacune
-   de ces bibliothèques, disponibles dans les dépôts correspondants sur GitHub.
+   Chaque programme inclut des bibliothèques publiées sous leurs propres licences
+   open source (MIT, Apache-2.0, ...), indiquées dans le dépôt GitHub correspondant.
 
-5. PROTECTION DES DONNÉES (RGPD)
-   \u{2713} Aucune donnée personnelle n'est collectée, transmise ou stockée par cet installeur
-     ou par les programmes de la Rusty Suite.
-   \u{2713} Aucun tracking, télémétrie ou analytique n'est mis en place.
-   \u{2713} Les seuls accès réseau effectués sont : le téléchargement des binaires depuis GitHub,
-     la vérification des certificats, et le téléchargement des fichiers de langue.
+5. PROTECTION DES DONNÉES (RGPD / LPD)
+   \u{2713} Aucune donnée personnelle n'est collectée, transmise ou stockée par cet
+     installeur ni par les programmes de la Rusty Suite.
+   \u{2713} Aucun suivi, télémétrie ou analyse n'est mis en place.
+   \u{2713} Les seuls accès réseau effectués sont : le téléchargement des binaires
+     depuis GitHub, la vérification des certificats et le téléchargement des
+     fichiers de langue.
 
 6. OPTION DE LANGUE
-   L'installeur propose une sélection de langue lors de l'installation.
-   Les langues disponibles sont déterminées par les fichiers de traduction présents
-   dans chaque dépôt GitHub des programmes de la suite.
-   La langue choisie est appliquée à l'ensemble des programmes installés.
+   L'installeur propose un choix de langue lors de l'installation.
+   Les langues disponibles dépendent des fichiers de traduction présents
+   dans le dépôt GitHub de chaque programme.
+   La langue choisie est appliquée à tous les programmes installés.
 
 7. MISES À JOUR
    Cet installeur peut proposer des mises à jour des programmes installés.
-   Ces mises à jour sont soumises aux mêmes conditions de licence.
+   Les mises à jour sont distribuées sous la même licence.
 
-En cliquant sur « Accepter et continuer », vous confirmez avoir lu, compris
-et accepté l'intégralité des présentes conditions.
+En cliquant sur \u{ab} Accepter et continuer \u{bb}, vous confirmez avoir lu ces conditions.
 ",
-    eula_accept_label:     "J'ai lu et j'accepte les termes du contrat de licence",
+    eula_accept_label:     "J'ai lu et j'accepte ces conditions",
     accept_btn:            "Accepter et continuer \u{2192}",
     cancel_btn:            "Annuler",
 
@@ -430,53 +427,52 @@ static DE: Translations = Translations {
     other_languages:       "Weitere verfügbare Sprachen",
     continue_btn:          "Weiter \u{2192}",
 
-    eula_title:            "Endbenutzer-Lizenzvertrag",
+    eula_title:            "Lizenz und Nutzungsbedingungen",
     eula_text:             "\
-ENDBENUTZER-LIZENZVERTRAG — RUSTY SUITE
-=========================================
+LIZENZ UND NUTZUNGSBEDINGUNGEN — RUSTY SUITE
+=============================================
 
-Durch die Installation dieser Software akzeptieren Sie die folgenden Bedingungen:
+1. LIZENZ
+   Die Programme der Rusty Suite und dieses Installationsprogramm sind freie
+   Software, © rusty-suite, lizenziert unter der GNU General Public License,
+   Version 3 oder (nach Ihrer Wahl) jeder späteren Version (GPL-3.0-or-later).
+   Sie dürfen sie gemäss dieser Lizenz nutzen, untersuchen, weitergeben und
+   verändern: https://www.gnu.org/licenses/gpl-3.0.html
 
-1. RECHTE & GEISTIGES EIGENTUM
-   Alle Programme der Rusty Suite sind ausschliessliches Eigentum von rusty-suite.com.
-   Jede nicht autorisierte Vervielfältigung, Weitergabe oder Änderung ist streng verboten.
+2. VERANTWORTUNGSVOLLE NUTZUNG
+   Sie bleiben dafür verantwortlich, die Programme im Einklang mit dem
+   geltenden Recht zu nutzen. Dieser Hinweis schränkt die Rechte der GPL nicht ein.
 
-2. ERLAUBTE NUTZUNG
-   Die Programme werden ausschliesslich für legale und ethische Zwecke bereitgestellt.
-   Jede Nutzung für illegale, schädliche oder gegen geltendes Recht verstossende Zwecke
-   ist ausdrücklich verboten.
+3. KEINE GEWÄHRLEISTUNG
+   Wie in der GPL festgelegt, werden die Programme \u{ab}wie besehen\u{bb} und ohne
+   jede Gewährleistung bereitgestellt. Soweit gesetzlich zulässig, haften die
+   Autoren nicht für direkte oder indirekte Schäden aus ihrer Nutzung.
 
-3. HAFTUNGSBESCHRÄNKUNG
-   Der Autor (rusty-suite.com) übernimmt keine Haftung für direkte
-   oder indirekte Schäden, die durch die Nutzung der installierten Programme entstehen.
-   Sie verwenden diese Software auf eigenes Risiko.
+4. LIZENZEN DRITTER
+   Jedes Programm enthält Bibliotheken unter eigenen Open-Source-Lizenzen
+   (MIT, Apache-2.0, ...), die im jeweiligen GitHub-Repository aufgeführt sind.
 
-4. DRITTANBIETER-LIZENZEN
-   Jedes Programm kann Bibliotheken unter separaten Open-Source-Lizenzen enthalten.
-   Mit der Installation eines Programms akzeptieren Sie auch die Lizenzbedingungen
-   dieser Bibliotheken, die in den entsprechenden GitHub-Repositories verfügbar sind.
-
-5. DATENSCHUTZ (DSGVO)
-   \u{2713} Es werden keine personenbezogenen Daten durch dieses Installationsprogramm
-     oder durch die Rusty Suite-Programme gesammelt, übertragen oder gespeichert.
-   \u{2713} Kein Tracking, Telemetrie oder Analyse ist implementiert.
-   \u{2713} Die einzigen Netzwerkzugriffe sind: Herunterladen von Binärdateien von GitHub,
-     Zertifikatsüberprüfung und Herunterladen von Sprachdateien.
+5. DATENSCHUTZ (DSGVO / DSG)
+   \u{2713} Dieses Installationsprogramm und die Programme der Rusty Suite erheben,
+     übertragen oder speichern keine personenbezogenen Daten.
+   \u{2713} Es gibt kein Tracking, keine Telemetrie und keine Analyse.
+   \u{2713} Die einzigen Netzwerkzugriffe sind: Herunterladen der Programme von
+     GitHub, Überprüfung der Zertifikate und Herunterladen der Sprachdateien.
 
 6. SPRACHOPTION
-   Das Installationsprogramm bietet während der Installation eine Sprachauswahl.
-   Verfügbare Sprachen werden durch die Übersetzungsdateien in den GitHub-Repositories
-   jedes Programms bestimmt.
-   Die gewählte Sprache wird auf alle installierten Programme angewendet.
+   Das Installationsprogramm bietet bei der Installation eine Sprachauswahl an.
+   Die verfügbaren Sprachen hängen von den Übersetzungsdateien im
+   GitHub-Repository jedes Programms ab.
+   Die gewählte Sprache wird für alle installierten Programme übernommen.
 
 7. AKTUALISIERUNGEN
    Dieses Installationsprogramm kann Updates für installierte Programme anbieten.
-   Diese Updates unterliegen denselben Lizenzbedingungen.
+   Updates werden unter derselben Lizenz verteilt.
 
-Durch Klicken auf \u{ab}Akzeptieren und weiter\u{bb} bestätigen Sie, dass Sie alle
-diese Bedingungen gelesen, verstanden und akzeptiert haben.
+Durch Klicken auf \u{ab}Akzeptieren und weiter\u{bb} bestätigen Sie, dass Sie diese
+Bedingungen gelesen haben.
 ",
-    eula_accept_label:     "Ich habe die Lizenzbedingungen gelesen und stimme ihnen zu",
+    eula_accept_label:     "Ich habe diese Bedingungen gelesen und akzeptiere sie",
     accept_btn:            "Akzeptieren und weiter \u{2192}",
     cancel_btn:            "Abbrechen",
 
@@ -574,53 +570,51 @@ static IT: Translations = Translations {
     other_languages:       "Altre lingue disponibili",
     continue_btn:          "Continua \u{2192}",
 
-    eula_title:            "Contratto di Licenza con l'Utente Finale",
+    eula_title:            "Licenza e condizioni d'uso",
     eula_text:             "\
-CONTRATTO DI LICENZA CON L'UTENTE FINALE — RUSTY SUITE
-========================================================
+LICENZA E CONDIZIONI D'USO — RUSTY SUITE
+=========================================
 
-Installando questo software, si accettano le seguenti condizioni:
+1. LICENZA
+   I programmi della Rusty Suite e questo installer sono software libero,
+   © rusty-suite, distribuiti con la GNU General Public License, versione 3 o
+   (a tua scelta) qualsiasi versione successiva (GPL-3.0-or-later).
+   Puoi usarli, studiarli, condividerli e modificarli secondo i termini di
+   questa licenza: https://www.gnu.org/licenses/gpl-3.0.html
 
-1. DIRITTI E PROPRIETÀ INTELLETTUALE
-   Tutti i programmi della Rusty Suite sono di esclusiva proprietà di rusty-suite.com.
-   Qualsiasi riproduzione, ridistribuzione o modifica non autorizzata è severamente vietata.
+2. USO RESPONSABILE
+   Resti responsabile di utilizzare i programmi nel rispetto della legge
+   applicabile. Questo promemoria non limita i diritti concessi dalla GPL.
 
-2. USO CONSENTITO
-   I programmi sono forniti esclusivamente per scopi legali ed etici.
-   Qualsiasi utilizzo per scopi illegali, dannosi o contrari alla legge vigente
-   è espressamente vietato.
-
-3. LIMITAZIONE DI RESPONSABILITÀ
-   L'autore (rusty-suite.com) declina ogni responsabilità per danni diretti
-   o indiretti causati dall'uso dei programmi installati.
-   L'utilizzo di questo software avviene a proprio rischio.
+3. NESSUNA GARANZIA
+   Come previsto dalla GPL, i programmi sono forniti \u{ab}così come sono\u{bb}, senza
+   alcuna garanzia. Nei limiti consentiti dalla legge, gli autori non sono
+   responsabili di danni diretti o indiretti derivanti dal loro utilizzo.
 
 4. LICENZE DI TERZE PARTI
-   Ogni programma può includere librerie con licenze open source separate.
-   Installando un programma, si accettano anche i termini di licenza di ciascuna
-   di queste librerie, disponibili nei repository corrispondenti su GitHub.
+   Ogni programma include librerie pubblicate con le proprie licenze open source
+   (MIT, Apache-2.0, ...), indicate nel repository GitHub corrispondente.
 
-5. PROTEZIONE DEI DATI (GDPR)
-   \u{2713} Nessun dato personale viene raccolto, trasmesso o archiviato da questo installer
-     o dai programmi della Rusty Suite.
-   \u{2713} Nessun tracciamento, telemetria o analisi è implementato.
-   \u{2713} Gli unici accessi di rete effettuati sono: download dei binari da GitHub,
-     verifica dei certificati e download dei file di lingua.
+5. PROTEZIONE DEI DATI (GDPR / LPD)
+   \u{2713} Nessun dato personale viene raccolto, trasmesso o memorizzato da questo
+     installer o dai programmi della Rusty Suite.
+   \u{2713} Non è implementato alcun tracciamento, telemetria o analisi.
+   \u{2713} Gli unici accessi di rete effettuati sono: download dei programmi da
+     GitHub, verifica dei certificati e download dei file di lingua.
 
-6. OPZIONE DI LINGUA
-   L'installer propone una selezione della lingua durante l'installazione.
-   Le lingue disponibili sono determinate dai file di traduzione presenti
-   nei repository GitHub di ciascun programma.
+6. OPZIONE LINGUA
+   L'installer offre una scelta della lingua durante l'installazione.
+   Le lingue disponibili dipendono dai file di traduzione presenti
+   nel repository GitHub di ciascun programma.
    La lingua scelta viene applicata a tutti i programmi installati.
 
 7. AGGIORNAMENTI
    Questo installer può proporre aggiornamenti per i programmi installati.
-   Questi aggiornamenti sono soggetti agli stessi termini di licenza.
+   Gli aggiornamenti sono distribuiti con la stessa licenza.
 
-Facendo clic su \u{ab}Accetta e continua\u{bb}, si conferma di aver letto, compreso
-e accettato integralmente queste condizioni.
+Facendo clic su \u{ab}Accetta e continua\u{bb}, confermi di aver letto queste condizioni.
 ",
-    eula_accept_label:     "Ho letto e accetto i termini del contratto di licenza",
+    eula_accept_label:     "Ho letto e accetto queste condizioni",
     accept_btn:            "Accetta e continua \u{2192}",
     cancel_btn:            "Annulla",
 

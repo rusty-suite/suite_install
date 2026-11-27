@@ -56,7 +56,7 @@ suite_install/
     ├── github.rs          client GitHub, repos, releases, fichiers de langue, certs
     ├── screens/
     │   ├── mod.rs
-    │   ├── eula.rs        ecran du contrat de licence (EULA)
+    │   ├── eula.rs        ecran licence et conditions d'utilisation (GPL)
     │   ├── program_list.rs  liste install/desinstall avec onglets
     │   └── installing.rs  progression en temps reel (install et desinstall)
     └── install/
@@ -134,7 +134,7 @@ Demarrer  : %APPDATA%\Microsoft\Windows\Start Menu\Programs\Rusty Suite\<app>.ln
 4. Lecture des fichiers `.toml` dans le dossier `lang/` de chaque depot.
 5. Calcul des langues communes a tous les programmes.
 6. Lecture du record local `install.json` pour detecter les versions installees.
-7. Affichage EULA — acceptation obligatoire.
+7. Affichage de la licence (GPL) et des conditions d'utilisation — acceptation obligatoire.
 8. Affichage de la liste avec les onglets Installer / Desinstaller.
 9. Pour chaque programme selectionne :
    a. Creation des dossiers `Program Files\rusty-suite\<app>\` et `%APPDATA%\rusty-suite\<app>\`.
@@ -179,3 +179,12 @@ Si le depot du programme contient `certificat_public/<app>.crt`, l'installeur :
 2. L'installe dans le magasin de l'utilisateur via `certutil -addstore -user Root`.
 
 Cela permet aux programmes signes d'etre reconnus par Windows sans alerte.
+
+## Licence
+
+Copyright © rusty-suite.
+
+Ce programme est un logiciel libre : vous pouvez le redistribuer et/ou le modifier selon les termes de la Licence publique générale GNU publiée par la Free Software Foundation, soit la version 3 de la licence, soit (à votre choix) toute version ultérieure (`GPL-3.0-or-later`).
+Le texte complet se trouve dans [LICENSE](LICENSE).
+
+Ce programme est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE GARANTIE.

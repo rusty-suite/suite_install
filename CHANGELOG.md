@@ -8,6 +8,13 @@ et le projet respecte le [Versionnage sémantique](https://semver.org/lang/fr/) 
 
 ## [Non publié]
 
+### Modifié
+- Licence : GNU GPL v3 ou ultérieure (`GPL-3.0-or-later`), fichier `LICENSE` ajouté.
+  L'installeur devient un logiciel libre, utilisable par tous.
+- L'écran « Contrat de licence utilisateur final » devient « Licence et conditions
+  d'utilisation » (4 langues) : il présente la GPL et retire les clauses qui la
+  contredisaient (redistribution / modification interdites, restriction d'usage).
+
 ## [0.2.2] - 2026-11-26
 
 ### Corrigé
