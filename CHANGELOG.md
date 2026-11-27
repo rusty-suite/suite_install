@@ -8,6 +8,8 @@ et le projet respecte le [Versionnage sémantique](https://semver.org/lang/fr/) 
 
 ## [Non publié]
 
+## [0.3.0] - 2026-11-28
+
 ### Modifié
 - Licence : GNU GPL v3 ou ultérieure (`GPL-3.0-or-later`), fichier `LICENSE` ajouté.
   L'installeur devient un logiciel libre, utilisable par tous.
@@ -55,7 +57,8 @@ et le projet respecte le [Versionnage sémantique](https://semver.org/lang/fr/) 
 
 Première pré-release publique (tag historique `Win_&_Linux`).
 
-[Non publié]: https://github.com/rusty-suite/suite_install/compare/v0.2.2...HEAD
+[Non publié]: https://github.com/rusty-suite/suite_install/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/rusty-suite/suite_install/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/rusty-suite/suite_install/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/rusty-suite/suite_install/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rusty-suite/suite_install/compare/Win_%26_Linux...v0.2.0
